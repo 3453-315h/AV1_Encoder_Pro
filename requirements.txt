@@ -1,0 +1,11 @@
+# AV1 Video Encoder Pro - Requirements
+# Install with: pip install -r requirements.txt
+
+# Core UI framework
+customtkinter>=5.0.0
+
+# Image handling
+Pillow>=9.0.0
+
+# Drag and drop functionality (Windows)
+windnd>=1.0.7
