@@ -7,8 +7,6 @@ Browser-based UI for AV1 video encoding via Gradio.
 import gradio as gr
 import subprocess
 import os
-import shutil
-import tempfile
 from pathlib import Path
 from datetime import datetime
 

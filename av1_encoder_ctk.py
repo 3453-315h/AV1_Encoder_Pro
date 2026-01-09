@@ -567,7 +567,8 @@ class AV1EncoderPro(ctk.CTk):
                     
                 logo = ctk.CTkImage(light_image=logo_img, dark_image=logo_img, size=(w, h))
                 ctk.CTkLabel(card, image=logo, text="").pack(pady=(40, 20))
-        except:
+        except Exception:
+            # Logo loading failed - non-critical, continue without logo
             pass
             
         ctk.CTkLabel(card, text="Version 1.0.0",
@@ -792,10 +793,6 @@ class AV1EncoderPro(ctk.CTk):
         
         self.quality_var = ctk.IntVar(value=50)
         self.crf_label = ctk.StringVar(value="50% (CRF 30)")
-        
-        ctk.CTkLabel(q_row, textvariable=self.crf_label,
-                    font=ctk.CTkFont(size=10),
-                    text_color=COLORS['text']).pack(side="left", padx=12)
         
         ctk.CTkLabel(q_row, textvariable=self.crf_label,
                     font=ctk.CTkFont(size=10),

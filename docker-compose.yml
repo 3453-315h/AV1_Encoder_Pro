@@ -8,8 +8,6 @@
 # Prerequisites for GUI mode on Linux:
 #   xhost +local:docker
 
-version: '3.8'
-
 services:
   # CLI Mode - Headless encoding
   encoder:
