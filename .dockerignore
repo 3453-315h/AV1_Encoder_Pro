@@ -1,0 +1,50 @@
+# Docker ignore file for AV1 Encoder Pro
+# Excludes unnecessary files from the Docker build context
+
+# Git
+.git
+.gitattributes
+.gitignore
+
+# Windows executables (not needed in Linux container)
+*.exe
+ffmpeg.exe
+
+# PyInstaller build artifacts
+*.spec
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation (optional - remove if you want docs in container)
+# README.md
+# USAGE_GUIDE.md
+
+# Test files
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+videos/
+output/
+
+# Version info (Windows-specific)
+version_info.txt
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp

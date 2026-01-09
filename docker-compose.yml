@@ -1,0 +1,110 @@
+# AV1 Video Encoder Pro - Docker Compose Configuration
+#
+# Usage:
+#   Start CLI mode:     docker-compose run encoder --help
+#   Encode a video:     docker-compose run encoder encode_cli.py -i /videos/input.mp4 -o /output/output.webm
+#   Start GUI (Linux):  docker-compose up gui
+#
+# Prerequisites for GUI mode on Linux:
+#   xhost +local:docker
+
+version: '3.8'
+
+services:
+  # CLI Mode - Headless encoding
+  encoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: av1-encoder-pro:latest
+    container_name: av1-encoder-cli
+    volumes:
+      # Mount your video directories
+      - ./videos:/videos:ro # Input videos (read-only)
+      - ./output:/output # Output directory
+      # Or use absolute paths:
+      # - /path/to/your/videos:/videos:ro
+      # - /path/to/output:/output
+    environment:
+      - PYTHONIOENCODING=utf-8
+    working_dir: /app
+    # Default: show help
+    command: [ "encode_cli.py", "--help" ]
+
+  # Batch encoding service
+  batch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: av1-encoder-pro:latest
+    container_name: av1-encoder-batch
+    volumes:
+      - ./videos:/videos:ro
+      - ./output:/output
+    environment:
+      - PYTHONIOENCODING=utf-8
+    working_dir: /app
+    # Override to run batch encoding
+    entrypoint: /bin/bash
+    command: |
+      -c '
+      echo "=== AV1 Batch Encoder ==="
+      echo "Encoding all videos in /videos to /output..."
+      for f in /videos/*.{mp4,mkv,avi,mov,webm}; do
+        if [ -f "$$f" ]; then
+          filename=$$(basename "$$f")
+          name="$${filename%.*}"
+          echo "Encoding: $$filename"
+          python /app/encode_cli.py -i "$$f" -o "/output/$${name}_av1.webm" -q 50 -p 6
+        fi
+      done
+      echo "=== Batch complete ==="
+      '
+
+  # Web UI Mode (Browser access - works on all platforms)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: av1-encoder-pro:latest
+    container_name: av1-encoder-web
+    volumes:
+      - ./videos:/videos
+      - ./output:/output
+    environment:
+      - PYTHONIOENCODING=utf-8
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - GRADIO_SERVER_PORT=2081
+    working_dir: /app
+    # Run the Web UI application
+    entrypoint: [ "python", "web_ui.py" ]
+    ports:
+      - "2081:2081"
+    restart: unless-stopped
+
+  # GUI Mode (Linux with X11) - Desktop GUI, not for browser
+  gui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: av1-encoder-pro:latest
+    container_name: av1-encoder-gui
+    volumes:
+      - ./videos:/videos
+      - ./output:/output
+      # X11 socket for GUI display (Linux)
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - PYTHONIOENCODING=utf-8
+      # For Wayland (uncomment if needed)
+      # - WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+      # - XDG_RUNTIME_DIR=/tmp
+    working_dir: /app
+    # Run the GUI application
+    entrypoint: [ "python", "av1_encoder_ctk.py" ]
+
+# Optional: Named volumes for persistent storage
+volumes:
+  videos:
+  output:
