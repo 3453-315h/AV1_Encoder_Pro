@@ -571,7 +571,7 @@ class AV1EncoderPro(ctk.CTk):
             # Logo loading failed - non-critical, continue without logo
             pass
             
-        ctk.CTkLabel(card, text="Version 1.0.0",
+        ctk.CTkLabel(card, text="Version 1.1.0",
                     font=ctk.CTkFont(size=12)).pack(pady=(0, 10))
                     
         ctk.CTkLabel(card, text="A modern AV1 video encoder powered by FFmpeg and SVT-AV1.",

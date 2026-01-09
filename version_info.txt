@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -18,12 +18,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'AV1 Encoder Pro'),
             StringStruct(u'FileDescription', u'AV1 Video Encoder Pro - Professional AV1 Encoding'),
-            StringStruct(u'FileVersion', u'1.0.0.0'),
+            StringStruct(u'FileVersion', u'1.1.0.0'),
             StringStruct(u'InternalName', u'AV1EncoderPro'),
             StringStruct(u'LegalCopyright', u'© 2025 AV1 Encoder Pro. All rights reserved.'),
             StringStruct(u'OriginalFilename', u'AV1_Encoder_Pro.exe'),
             StringStruct(u'ProductName', u'AV1 Encoder Pro'),
-            StringStruct(u'ProductVersion', u'1.0.0.0'),
+            StringStruct(u'ProductVersion', u'1.1.0.0'),
           ]
         )
       ]

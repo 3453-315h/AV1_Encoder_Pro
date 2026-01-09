@@ -10,7 +10,7 @@ FROM python:3.11-slim-bookworm
 
 LABEL maintainer="AV1 Encoder Pro"
 LABEL description="Professional AV1 Video Encoder with FFmpeg and SVT-AV1"
-LABEL version="1.0.0"
+LABEL version="1.1.0"
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
