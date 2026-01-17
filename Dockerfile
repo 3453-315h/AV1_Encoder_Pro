@@ -45,13 +45,14 @@ COPY encode_cli.py .
 COPY web_ui.py .
 COPY assets/ ./assets/
 
-# Make CLI script executable
-RUN chmod +x /app/encode_cli.py
+# Copy entrypoint script
+COPY entrypoint.sh .
+RUN chmod +x /app/entrypoint.sh
 
 # Create volumes for video files
 RUN mkdir -p /videos /output
 VOLUME ["/videos", "/output"]
 
-# Default entrypoint - CLI encoder
-ENTRYPOINT ["python", "encode_cli.py"]
-CMD ["--help"]
+# Set entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]
+

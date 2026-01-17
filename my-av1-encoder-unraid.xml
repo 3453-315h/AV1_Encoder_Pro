@@ -56,4 +56,7 @@ Access Web UI at http://[IP]:[PORT:2081]</Overview>
   <Config Name="Web UI Port" Target="2081" Default="2081" Mode="tcp" Description="Port for the Web UI" Type="Port" Display="always" Required="true" Mask="false">2081</Config>
   <Config Name="Input Videos Path" Target="/videos" Default="/mnt/user/Isos/Source/" Mode="rw" Description="Path to source video files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Source/</Config>
   <Config Name="Output Path" Target="/output" Default="/mnt/user/Isos/Converted/" Mode="rw" Description="Path for encoded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Converted/</Config>
+  <Config Name="Run Mode" Target="MODE" Default="web" Mode="" Description="Mode to run: 'web', 'cli', or 'gui'" Type="Variable" Display="always" Required="true" Mask="false">web</Config>
+  <Config Name="Gradio Server Name" Target="GRADIO_SERVER_NAME" Default="0.0.0.0" Mode="" Description="Server host (0.0.0.0 for public)" Type="Variable" Display="advanced" Required="false" Mask="false">0.0.0.0</Config>
+  <Config Name="Gradio Server Port" Target="GRADIO_SERVER_PORT" Default="2081" Mode="" Description="Server port" Type="Variable" Display="advanced" Required="false" Mask="false">2081</Config>
 </Container>
