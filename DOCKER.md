@@ -137,3 +137,106 @@ docker run -v $(pwd):/data av1-encoder-pro \
 - **Encoders**: SVT-AV1 (recommended), libaom, rav1e available
 - **GPU**: GPU encoders (NVENC, AMF, QSV) require NVIDIA Container Toolkit
 - **GUI**: Only works on Linux with X11 display forwarding
+
+---
+
+## Deploy to Docker Hub
+
+To share your encoder image on Docker Hub:
+
+1.  **Login to Docker Hub**
+    ```bash
+    docker login
+    ```
+
+2.  **Tag the Image**
+    Replace `your-username` with your actual Docker Hub username.
+    ```bash
+    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.0.0
+    docker tag av1-encoder-pro your-username/av1-encoder-pro:latest
+    ```
+
+3.  **Push to Docker Hub**
+    ```bash
+    docker push your-username/av1-encoder-pro:v1.0.0
+    docker push your-username/av1-encoder-pro:latest
+    ```
+
+---
+
+## Unraid Setup Guide
+
+You can install this container on Unraid using the **Docker** tab > **Add Container** button.
+
+### Manual Configuration
+
+Fill in the "Add Container" form with these values:
+
+| Field | Value | Notes |
+|-------|-------|-------|
+| **Name** | `AV1-Encoder-Pro` | |
+| **Repository** | `315h/av1-encoder-pro:latest` | **Replace** `your-username` with your Docker Hub ID |
+| **Network Type** | `Bridge` | |
+| **Console Shell Command** | `Shell` | |
+| **Privileged** | `Off` | Turn ON if you need extensive hardware access (rare) |
+| **WebUI** | `http://[IP]:[PORT:2081]/` | Enables the "WebUI" context menu item |
+
+### Port Mappings (Add Port)
+
+| Config | Value |
+|--------|-------|
+| **Container Port** | `2081` |
+| **Host Port** | `2081` |
+| **Connection Type** | `TCP` |
+
+### Path Mappings (Add Path)
+
+You need two paths: one for your source videos and one for output.
+
+**1. Input Videos**
+- **Container Path**: `/videos`
+- **Host Path**: `/mnt/user/Isos/Source` (or wherever your videos are)
+- **Access Mode**: `Read/Write` (or Read Only if you prefer)
+
+**2. Output Directory**
+- **Container Path**: `/output`
+- **Host Path**: `/mnt/user/Isos/Converted`
+- **Access Mode**: `Read/Write`
+
+### GPU Passthrough (NVIDIA)
+
+To use NVENC hardware encoding or acceleration:
+
+1.  **Install the "Nvidia Driver" Plugin**:
+    - Go to the **Apps** tab in Unraid.
+    - Search for and install **"Nvidia Driver"**.
+    - Go to **Settings > Nvidia Driver** and download the latest driver version. Reboot if required.
+
+2.  **Configure the Container**:
+    - Build your container image (if building locally) or pull it.
+    - Go to the **Docker** tab and edit the `AV1-Encoder-Pro` container.
+    - Toggle **Advanced View** to ON (switch in the top right corner).
+    - Find the **Extra Parameters** field and add:
+      ```text
+      --runtime=nvidia
+      ```
+    - Add a **Variable** (Click "Add another Path, Port, Variable..."):
+        - **Config Type**: `Variable`
+        - **Name**: `NVIDIA_VISIBLE_DEVICES`
+        - **Key**: `NVIDIA_VISIBLE_DEVICES`
+        - **Value**: `all` (or the specific UUID of your GPU)
+    - Add another **Variable**:
+        - **Config Type**: `Variable`
+        - **Name**: `NVIDIA_DRIVER_CAPABILITIES`
+        - **Key**: `NVIDIA_DRIVER_CAPABILITIES`
+        - **Value**: `all`
+
+3.  **Verify**:
+    - Start the container.
+    - Open the Web UI console or docker shell.
+    - Run `nvidia-smi` to confirm the GPU is visible.
+
+
+---
+
+

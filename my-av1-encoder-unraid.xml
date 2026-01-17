@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>AV1-Encoder-Pro</Name>
+  <Repository>315h/av1-encoder-pro:latest</Repository>
+  <Registry>https://hub.docker.com/r/315h/av1-encoder-pro</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/3453-315h/AV1_Encoder_Pro/issues</Support>
+  <Project>https://github.com/3453-315h/AV1_Encoder_Proyes</Project>
+  <Overview>Professional AV1 Video Encoder with Web UI.&#xD;
+&#xD;
+Features:&#xD;
+- Simple Drag &amp; Drop Web Interface&#xD;
+- SVT-AV1, AOM-AV1, RAV1E support&#xD;
+- Batch processing&#xD;
+- Visual Quality Metrics&#xD;
+&#xD;
+Usage:&#xD;
+Access Web UI at http://[IP]:[PORT:2081]</Overview>
+  <Category>MediaApp:Video</Category>
+  <WebUI>http://[IP]:[PORT:2081]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/handbrake-icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1673000000</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Description>Professional AV1 Video Encoder with Web UI.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>2081</HostPort>
+        <ContainerPort>2081</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/Isos/Source/</HostDir>
+      <ContainerDir>/videos</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/Isos/Converted/</HostDir>
+      <ContainerDir>/output</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+  </Data>
+  <Environment/>
+  <Config Name="Web UI Port" Target="2081" Default="2081" Mode="tcp" Description="Port for the Web UI" Type="Port" Display="always" Required="true" Mask="false">2081</Config>
+  <Config Name="Input Videos Path" Target="/videos" Default="/mnt/user/Isos/Source/" Mode="rw" Description="Path to source video files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Source/</Config>
+  <Config Name="Output Path" Target="/output" Default="/mnt/user/Isos/Converted/" Mode="rw" Description="Path for encoded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Converted/</Config>
+</Container>
