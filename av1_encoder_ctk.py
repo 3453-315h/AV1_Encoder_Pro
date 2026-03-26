@@ -10,8 +10,19 @@ import subprocess
 import threading
 import queue
 import datetime
-import windnd
 import webbrowser
+
+# Platform detection for cross-platform compatibility
+IS_WINDOWS = sys.platform == 'win32'
+
+# Drag-and-drop is Windows-only
+if IS_WINDOWS:
+    try:
+        import windnd
+    except ImportError:
+        windnd = None
+else:
+    windnd = None
 
 # Set appearance
 ctk.set_appearance_mode("dark")
@@ -93,8 +104,9 @@ class AV1EncoderPro(ctk.CTk):
         # Track active encoding processes for cleanup
         self.active_processes = []
         
-        # Setup Drag and Drop
-        windnd.hook_dropfiles(self, func=self.on_drop)
+        # Setup Drag and Drop (Windows only)
+        if windnd is not None:
+            windnd.hook_dropfiles(self, func=self.on_drop)
         
         # Handle window close - kill running processes
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -132,15 +144,16 @@ class AV1EncoderPro(ctk.CTk):
             
             for path in paths:
                 if os.path.isdir(path):
-                    # It's a folder - add all video files inside
+                    # It's a folder - recursively add all video files inside
                     self.log(f"[INFO] Folder dropped: {path}")
-                    for f in os.listdir(path):
-                        if f.lower().endswith(video_extensions):
-                            full_path = os.path.join(path, f)
-                            if full_path not in self.batch_files:
-                                self.batch_files.append(full_path)
-                                self.batch_listbox.insert("end", full_path + "\n")
-                                added_count += 1
+                    for root, dirs, files in os.walk(path):
+                        for f in files:
+                            if f.lower().endswith(video_extensions):
+                                full_path = os.path.join(root, f)
+                                if full_path not in self.batch_files:
+                                    self.batch_files.append(full_path)
+                                    self.batch_listbox.insert("end", full_path + "\n")
+                                    added_count += 1
                 elif os.path.isfile(path) and path.lower().endswith(video_extensions):
                     # It's a video file
                     if path not in self.batch_files:
@@ -384,6 +397,7 @@ class AV1EncoderPro(ctk.CTk):
                                          placeholder_text="HH",
                                          justify="center")
         self.schedule_hour.pack(side="left")
+        self.schedule_hour.bind("<FocusOut>", lambda e: self._validate_schedule_time())
         
         ctk.CTkLabel(time_row, text=":",
                     font=ctk.CTkFont(size=14, weight="bold"),
@@ -395,6 +409,7 @@ class AV1EncoderPro(ctk.CTk):
                                         placeholder_text="MM",
                                         justify="center")
         self.schedule_min.pack(side="left")
+        self.schedule_min.bind("<FocusOut>", lambda e: self._validate_schedule_time())
         
         # Info text
         info_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -435,7 +450,6 @@ class AV1EncoderPro(ctk.CTk):
             ("NVENC (NVIDIA GPU)", "av1_nvenc", "Hardware encoding. Very fast. Requires RTX 40 series."),
             ("AMF (AMD GPU)", "av1_amf", "Hardware encoding. Very fast. Requires RX 7000 series."),
             ("QSV (Intel GPU)", "av1_qsv", "Hardware encoding. Fast. Requires Intel Arc GPU."),
-            ("Vulkan (GPU)", "av1_vulkan", "Cross-platform GPU encoding via Vulkan API."),
         ]
         
         self.encoder_var = ctk.StringVar(value="libsvtav1")
@@ -521,7 +535,6 @@ class AV1EncoderPro(ctk.CTk):
             "• NVENC: NVIDIA GeForce RTX 4000 series or newer",
             "• AMF: AMD Radeon RX 7000 series or newer", 
             "• QSV: Intel Arc A-series GPUs",
-            "• Vulkan: Any GPU with Vulkan 1.3+ support",
             "",
             "⚠️ If your GPU doesn't support AV1 encoding, the encoder will fail.",
             "   In that case, use SVT-AV1 (CPU) which works on all systems."
@@ -571,7 +584,7 @@ class AV1EncoderPro(ctk.CTk):
             # Logo loading failed - non-critical, continue without logo
             pass
             
-        ctk.CTkLabel(card, text="Version 1.1.0",
+        ctk.CTkLabel(card, text="Version 1.1.5",
                     font=ctk.CTkFont(size=12)).pack(pady=(0, 10))
                     
         ctk.CTkLabel(card, text="A modern AV1 video encoder powered by FFmpeg and SVT-AV1.",
@@ -588,7 +601,7 @@ class AV1EncoderPro(ctk.CTk):
                                   command=lambda: webbrowser.open("https://github.com/3453-315h"))
         github_btn.pack(pady=(0, 20))
         
-        ctk.CTkLabel(card, text="© 2025 AV1 Encoder Pro",
+        ctk.CTkLabel(card, text=f"© {datetime.datetime.now().year} AV1 Encoder Pro",
                     font=ctk.CTkFont(size=10),
                     text_color=COLORS['text_dim']).pack(pady=(10, 20))
     
@@ -649,15 +662,42 @@ class AV1EncoderPro(ctk.CTk):
         self.log(f"[INFO] Starting batch of {len(self.batch_files)} files...")
         threading.Thread(target=self.run_batch, daemon=True).start()
     
+    def _validate_schedule_time(self):
+        """Clamp schedule hour/minute inputs to valid ranges"""
+        try:
+            h = int(self.schedule_hour.get())
+            h = max(0, min(23, h))
+            self.schedule_hour.delete(0, "end")
+            self.schedule_hour.insert(0, str(h).zfill(2))
+        except (ValueError, TypeError):
+            pass
+        try:
+            m = int(self.schedule_min.get())
+            m = max(0, min(59, m))
+            self.schedule_min.delete(0, "end")
+            self.schedule_min.insert(0, str(m).zfill(2))
+        except (ValueError, TypeError):
+            pass
+    
     def _scheduled_batch_start(self, delay):
-        """Wait for scheduled time then start batch"""
+        """Wait for scheduled time then start batch (cancellable)"""
         import time
-        time.sleep(delay)
+        self._schedule_cancelled = False
+        elapsed = 0
+        while elapsed < delay:
+            if self._schedule_cancelled:
+                self.log("[INFO] Scheduled batch was cancelled.")
+                return
+            time.sleep(min(5, delay - elapsed))
+            elapsed += 5
+            remaining_min = max(0, int((delay - elapsed) // 60))
+            if remaining_min > 0 and elapsed % 60 < 6:
+                self.log(f"[SCHEDULE] {remaining_min} minutes remaining...")
         self.log(f"[INFO] Schedule triggered! Starting batch of {len(self.batch_files)} files...")
         self.run_batch()
     
     def run_batch(self):
-        """Run batch encoding of all files"""
+        """Run batch encoding of all files with progress and cancel support"""
         try:
             q = self.quality_var.get()
             crf = int(63 - (q * 0.63))
@@ -666,6 +706,9 @@ class AV1EncoderPro(ctk.CTk):
             crf = 30
             preset = "6"
             
+        succeeded = 0
+        failed = 0
+        
         for i, inp in enumerate(self.batch_files):
             self.log(f"[BATCH {i+1}/{len(self.batch_files)}] {os.path.basename(inp)}")
             
@@ -682,35 +725,52 @@ class AV1EncoderPro(ctk.CTk):
                 steps = self.compile_encode_commands(inp, out, crf, preset)
                 for step_name, cmd in steps:
                     self.log(f"  > Executing {step_name}...")
-                    try:
+                    self.log(f"  [CMD] {' '.join(cmd)}")
+                    
+                    # Set UTF-8 environment for unicode filename support
+                    env = os.environ.copy()
+                    env['PYTHONIOENCODING'] = 'utf-8'
+                    env['PYTHONUTF8'] = '1'
+                    
+                    popen_kwargs = {
+                        'stderr': subprocess.PIPE,
+                        'stdout': subprocess.DEVNULL,
+                        'env': env,
+                    }
+                    if IS_WINDOWS:
                         startupinfo = subprocess.STARTUPINFO()
                         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                         startupinfo.wShowWindow = subprocess.SW_HIDE
-                        
-                        # Set UTF-8 environment for unicode filename support
-                        env = os.environ.copy()
-                        env['PYTHONIOENCODING'] = 'utf-8'
-                        env['PYTHONUTF8'] = '1'
-                        
-                        result = subprocess.run(
-                            cmd, 
-                            capture_output=True, 
-                            check=True,
-                            startupinfo=startupinfo,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            env=env
-                        )
-                    except subprocess.CalledProcessError as cpe:
-                        stderr = cpe.stderr.decode('utf-8', errors='replace') if isinstance(cpe.stderr, bytes) else cpe.stderr
-                        self.log(f"[ERROR] FFmpeg Error:\n{stderr}")
-                        raise cpe
+                        popen_kwargs['startupinfo'] = startupinfo
+                        popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                    
+                    process = subprocess.Popen(cmd, **popen_kwargs)
+                    self.active_processes.append(process)
+                    
+                    # Stream progress from stderr
+                    for line in process.stderr:
+                        try:
+                            decoded = line.decode('utf-8', errors='replace') if isinstance(line, bytes) else line
+                            if "frame=" in decoded or "size=" in decoded or "time=" in decoded:
+                                self.log(f"  [PROGRESS] {decoded.strip()}")
+                        except Exception:
+                            pass
+                    
+                    process.wait()
+                    
+                    if process in self.active_processes:
+                        self.active_processes.remove(process)
+                    
+                    if process.returncode != 0:
+                        raise Exception(f"{step_name} failed with code {process.returncode}")
                         
                 self.log(f"[DONE] {os.path.basename(out)}")
+                succeeded += 1
             except Exception as e:
-                if not isinstance(e, subprocess.CalledProcessError):
-                     self.log(f"[ERROR] Failed {os.path.basename(inp)}: {str(e)}")
+                self.log(f"[ERROR] Failed {os.path.basename(inp)}: {str(e)}")
+                failed += 1
         
-        self.log("[BATCH COMPLETED]")
+        self.log(f"[BATCH COMPLETED] {succeeded} succeeded, {failed} failed out of {len(self.batch_files)} files.")
     
     def build_input_card(self, parent):
         """Input Source card"""
@@ -817,8 +877,6 @@ class AV1EncoderPro(ctk.CTk):
         # Audio moved to separate card
         
         # Advanced AV1 Settings
-        
-        # Advanced AV1 Settings
         self.tune_var = ctk.StringVar(value="VQ (Visual Quality)")
         self.make_dropdown(card, "Tune", self.tune_var,
                           ["VQ (Visual Quality)", "PSNR", "SSIM", "Film"])
@@ -848,8 +906,7 @@ class AV1EncoderPro(ctk.CTk):
                                          command=lambda v: self.grain_label.set(str(int(v))))
         self.grain_slider.pack(side="right", padx=(0, 10))
         
-        # twopass_var kept for compatibility
-        self.twopass_var = ctk.BooleanVar(value=False)
+
     
     def make_dropdown(self, parent, label, var, values, command=None):
         """Minimal flat dropdown matching Mastergui.png"""
@@ -906,6 +963,15 @@ class AV1EncoderPro(ctk.CTk):
                                         command=self.start_encode)
         self.encode_btn.pack(side="left", padx=(0, 8))
         
+        self.cancel_btn = ctk.CTkButton(btn_row, text="Cancel",
+                                        fg_color="#b02a2a",
+                                        hover_color="#8b1a1a",
+                                        text_color="white",
+                                        font=ctk.CTkFont(size=12),
+                                        width=70, height=36, corner_radius=6,
+                                        command=self.cancel_encode)
+        self.cancel_btn.pack(side="left", padx=(0, 8))
+        
         self.reset_btn = ctk.CTkButton(btn_row, text="Reset",
                                        fg_color=COLORS['input'],
                                        hover_color="#2d333b",
@@ -937,7 +1003,7 @@ class AV1EncoderPro(ctk.CTk):
     def browse_input(self):
         from tkinter import filedialog
         path = filedialog.askopenfilename(
-            filetypes=[("Video Files", "*.mp4 *.mkv *.avi *.mov *.webm"), ("All", "*.*")]
+            filetypes=[("Video Files", "*.mp4 *.mkv *.avi *.mov *.webm *.flv *.wmv"), ("All", "*.*")]
         )
         if path:
             self.input_var.set(path)
@@ -1022,12 +1088,16 @@ class AV1EncoderPro(ctk.CTk):
         self.console_queue.put(msg + "\n")
     
     def process_console_queue(self):
-        """Process queued console messages"""
+        """Process queued console messages (capped at 5000 lines)"""
         try:
             while True:
                 msg = self.console_queue.get_nowait()
                 self.console.insert("end", msg)
                 self.console.see("end")
+                # Cap console at 5000 lines to prevent memory bloat
+                line_count = int(self.console.index('end-1c').split('.')[0])
+                if line_count > 5000:
+                    self.console.delete('1.0', f'{line_count - 5000}.0')
         except queue.Empty:
             pass
         self.after(100, self.process_console_queue)
@@ -1039,6 +1109,14 @@ class AV1EncoderPro(ctk.CTk):
             # Fall back to system ffmpeg
             self.ffmpeg_path = "ffmpeg"
         
+        # Derive ffprobe path from ffmpeg path
+        if self.ffmpeg_path == "ffmpeg":
+            self.ffprobe_path = "ffprobe"
+        else:
+            self.ffprobe_path = os.path.join(os.path.dirname(self.ffmpeg_path), "ffprobe.exe")
+            if not os.path.exists(self.ffprobe_path):
+                self.ffprobe_path = "ffprobe"
+        
         try:
             result = subprocess.run([self.ffmpeg_path, "-version"], capture_output=True, text=True)
             if result.returncode == 0:
@@ -1046,11 +1124,30 @@ class AV1EncoderPro(ctk.CTk):
         except (FileNotFoundError, OSError):
             self.log("[ERROR] FFmpeg not found. Please install FFmpeg.")
     
+    def _probe_has_audio(self, input_path):
+        """Use ffprobe to check if the input file has an audio stream"""
+        try:
+            cmd = [
+                self.ffprobe_path, "-v", "error",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                input_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            return bool(result.stdout.strip())
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            # If ffprobe fails, assume audio exists (safe default)
+            return True
+    
     def start_encode(self):
         inp = self.input_var.get()
         out = self.output_var.get()
         if not inp:
             self.log("[ERROR] Please select an input file.")
+            return
+        if not out:
+            self.log("[ERROR] Please specify an output file path.")
             return
         
         q = self.quality_var.get()
@@ -1066,32 +1163,46 @@ class AV1EncoderPro(ctk.CTk):
     
     def compile_encode_commands(self, inp, out, crf, preset):
         """Generate FFmpeg commands based on current UI settings"""
-        # Audio
+        # Film Grain (must be read before tune check)
+        grain = self.grain_var.get()
+
+        # Audio — probe input to check if audio stream exists
         audio = self.audio_var.get()
         bitrate = self.audio_bitrate_var.get()
+        has_audio = self._probe_has_audio(inp)
         
-        # Safety for WebM container: Force Opus if Copy is selected (usually AAC)
-        is_webm = out.lower().endswith(".webm")
-        
-        if audio == "Copy":
-            if is_webm:
-                self.log("[INFO] 'Copy' audio into WebM is unsafe. Auto-switching to Opus (128k).")
-                audio_opts = ["-c:a", "libopus", "-b:a", "128k"]
-            else:
-                audio_opts = ["-c:a", "copy"]
-        elif audio == "Opus (Recommended)":
-            audio_opts = ["-c:a", "libopus", "-b:a", bitrate]
-        elif audio == "AAC":
-            audio_opts = ["-c:a", "aac", "-b:a", bitrate]
-        elif audio == "No Audio":
+        if not has_audio:
+            # No audio stream in input — force no audio regardless of UI setting
+            if audio != "No Audio":
+                self.log("[INFO] Input has no audio stream — skipping audio options.")
             audio_opts = ["-an"]
         else:
-            audio_opts = ["-c:a", "copy"]
+            # Safety for WebM container: Force Opus if Copy is selected (usually AAC)
+            is_webm = out.lower().endswith(".webm")
+            
+            if audio == "Copy":
+                if is_webm:
+                    self.log("[INFO] 'Copy' audio into WebM is unsafe. Auto-switching to Opus (128k).")
+                    audio_opts = ["-c:a", "libopus", "-b:a", "128k"]
+                else:
+                    audio_opts = ["-c:a", "copy"]
+            elif audio == "Opus (Recommended)":
+                audio_opts = ["-c:a", "libopus", "-b:a", bitrate]
+            elif audio == "AAC":
+                audio_opts = ["-c:a", "aac", "-b:a", bitrate]
+            elif audio == "No Audio":
+                audio_opts = ["-an"]
+            else:
+                audio_opts = ["-c:a", "copy"]
 
         # Tune
         tune = self.tune_var.get()
         tune_map = {"VQ (Visual Quality)": "0", "PSNR": "1", "SSIM": "2", "Film": "0"}
         tune_val = tune_map.get(tune, "0")
+        # "Film" mode: auto-apply film grain if not manually set
+        if tune == "Film" and grain == 0:
+            grain = 8
+            self.log("[INFO] Film tune selected — auto-applying film-grain=8")
 
         # Resolution
         resolution = self.resolution_var.get()
@@ -1105,9 +1216,6 @@ class AV1EncoderPro(ctk.CTk):
             }
             if resolution in res_map:
                 scale_opts = ["-vf", f"scale={res_map[resolution]}:flags=lanczos"]
-
-        # Film Grain
-        grain = self.grain_var.get()
         
         # Get encoder from Settings
         encoder = getattr(self, 'encoder_var', ctk.StringVar(value="libsvtav1")).get()
@@ -1118,7 +1226,7 @@ class AV1EncoderPro(ctk.CTk):
         
         # Check if encoder is SVT-AV1 (supports svtav1-params)
         is_svt = encoder == "libsvtav1"
-        is_gpu = encoder in ["av1_nvenc", "av1_amf", "av1_qsv", "av1_vulkan"]
+        is_gpu = encoder in ["av1_nvenc", "av1_amf", "av1_qsv"]
         
         # Build encoder-specific options
         encoder_opts = []
@@ -1127,36 +1235,38 @@ class AV1EncoderPro(ctk.CTk):
             svt_params = f"tune={tune_val}"
             if grain > 0:
                 svt_params += f":film-grain={grain}:film-grain-denoise=1"
-            if threads > 0:
-                svt_params += f":logical_processors={threads}"
             encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-svtav1-params", svt_params]
+            if threads > 0:
+                encoder_opts.extend(["-threads", str(threads)])
         elif is_gpu:
             # GPU encoders require specific hardware - warn user
             gpu_requirements = {
                 "av1_nvenc": "NVIDIA RTX 40 series GPU",
                 "av1_amf": "AMD RX 7000 series GPU", 
                 "av1_qsv": "Intel Arc GPU",
-                "av1_vulkan": "Vulkan-capable GPU with AV1 support"
             }
             self.log(f"[WARNING] {encoder} requires {gpu_requirements.get(encoder, 'specific GPU hardware')}")
             self.log("[INFO] If encoding fails, switch to SVT-AV1 (CPU) in Settings")
             
-            # GPU encoders use different quality parameters
+            # GPU encoders use different quality parameters (clamped to 0-51)
+            gpu_crf = min(51, crf)
             encoder_opts = ["-c:v", encoder]
             if encoder == "av1_nvenc":
-                encoder_opts.extend(["-cq", str(crf), "-preset", "p" + str(min(7, max(1, 8 - int(preset))))])
+                encoder_opts.extend(["-cq", str(gpu_crf), "-preset", "p" + str(min(7, max(1, 8 - int(preset))))])
             elif encoder == "av1_amf":
-                encoder_opts.extend(["-rc", "cqp", "-qp_i", str(crf), "-qp_p", str(crf)])
+                encoder_opts.extend(["-rc", "cqp", "-qp_i", str(gpu_crf), "-qp_p", str(gpu_crf)])
             elif encoder == "av1_qsv":
-                encoder_opts.extend(["-global_quality", str(crf)])
-            elif encoder == "av1_vulkan":
-                encoder_opts.extend(["-qp", str(crf)])
+                encoder_opts.extend(["-global_quality", str(max(1, gpu_crf))])
         else:
             # libaom or rav1e (CPU encoders)
             encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset)]
             if threads > 0:
                 encoder_opts.extend(["-threads", str(threads)])
 
+        # Warn if output already exists
+        if os.path.exists(out):
+            self.log(f"[WARNING] Output file already exists and will be overwritten: {os.path.basename(out)}")
+        
         # Build single-pass encode command
         cmd = [self.ffmpeg_path, "-y", "-i", inp]
         cmd.extend(encoder_opts)
@@ -1175,24 +1285,24 @@ class AV1EncoderPro(ctk.CTk):
                 self.log(f"{label} Starting...")
                 self.log(f"[CMD] {' '.join(cmd)}")
                 
-                # Use CREATE_NO_WINDOW and handle unicode properly
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                
                 # Set UTF-8 environment for unicode filename support
                 env = os.environ.copy()
                 env['PYTHONIOENCODING'] = 'utf-8'
                 env['PYTHONUTF8'] = '1'
                 
-                process = subprocess.Popen(
-                    cmd, 
-                    stderr=subprocess.PIPE, 
-                    stdout=subprocess.PIPE,
-                    startupinfo=startupinfo,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    env=env
-                )
+                popen_kwargs = {
+                    'stderr': subprocess.PIPE,
+                    'stdout': subprocess.DEVNULL,
+                    'env': env,
+                }
+                if IS_WINDOWS:
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                    popen_kwargs['startupinfo'] = startupinfo
+                    popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+                
+                process = subprocess.Popen(cmd, **popen_kwargs)
                 self.active_processes.append(process)
                 
                 # Read stderr as bytes and decode
@@ -1201,7 +1311,7 @@ class AV1EncoderPro(ctk.CTk):
                         decoded = line.decode('utf-8', errors='replace') if isinstance(line, bytes) else line
                         if "frame=" in decoded or "size=" in decoded or "time=" in decoded:
                             self.log(f"{label} {decoded.strip()}")
-                    except:
+                    except Exception:
                         pass
                         
                 process.wait()
@@ -1217,6 +1327,31 @@ class AV1EncoderPro(ctk.CTk):
         except Exception as e:
             self.log(f"[ERROR] {str(e)}")
     
+    def cancel_encode(self):
+        """Cancel all running encode processes and scheduled batches"""
+        # Cancel scheduled batch if waiting
+        self._schedule_cancelled = True
+        
+        cancelled = 0
+        for proc in list(self.active_processes):
+            try:
+                if proc.poll() is None:
+                    proc.terminate()
+                    proc.wait(timeout=2)
+                    cancelled += 1
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    proc.kill()
+                    cancelled += 1
+                except OSError:
+                    pass
+        self.active_processes.clear()
+        
+        if cancelled > 0:
+            self.log(f"[CANCELLED] Stopped {cancelled} running process(es).")
+        else:
+            self.log("[INFO] No active encoding to cancel.")
+    
     def reset_form(self):
         self.input_var.set("")
         self.output_var.set("")
@@ -1224,7 +1359,7 @@ class AV1EncoderPro(ctk.CTk):
         self.crf_label.set("50% (CRF 30)")
         self.preset_var.set("6 (Balanced)")
         self.format_var.set("WebM")
-        self.audio_var.set("Copy")
+        self.audio_var.set("Opus (Recommended)")
         self.tune_var.set("VQ (Visual Quality)")
         self.resolution_var.set("Original")
         self.grain_var.set(0)

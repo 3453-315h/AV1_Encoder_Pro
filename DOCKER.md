@@ -86,7 +86,7 @@ docker-compose up gui
 | `-o, --output` | Output video path | (required) |
 | `-q, --quality` | Quality 0-100 | 50 |
 | `-p, --preset` | Speed 0-13 (lower=better) | 6 |
-| `-e, --encoder` | libsvtav1, libaom-av1, librav1e | libsvtav1 |
+| `-e, --encoder` | libsvtav1, libaom-av1, librav1e, av1_nvenc, av1_amf, av1_qsv | libsvtav1 |
 | `-a, --audio` | libopus, aac, copy, none | libopus |
 | `-b, --bitrate` | Audio bitrate | 128k |
 | `-r, --resolution` | 4k, 1080p, 720p, 480p | original |
@@ -152,13 +152,13 @@ To share your encoder image on Docker Hub:
 2.  **Tag the Image**
     Replace `your-username` with your actual Docker Hub username.
     ```bash
-    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.0.0
+    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.1.5
     docker tag av1-encoder-pro your-username/av1-encoder-pro:latest
     ```
 
 3.  **Push to Docker Hub**
     ```bash
-    docker push your-username/av1-encoder-pro:v1.0.0
+    docker push your-username/av1-encoder-pro:v1.1.5
     docker push your-username/av1-encoder-pro:latest
     ```
 

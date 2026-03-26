@@ -25,14 +25,26 @@ def encode_video(input_path, output_path, quality=50, preset=6,
     crf = int(63 - (quality * 0.63))
     
     # Build command
-    cmd = ["ffmpeg", "-y", "-i", input_path]
+    ffmpeg = get_ffmpeg_path()
+    cmd = [ffmpeg, "-y", "-i", input_path]
     
     # Video encoding options
+    is_gpu = encoder in ["av1_nvenc", "av1_amf", "av1_qsv"]
+    
     if encoder == "libsvtav1":
         svt_params = f"tune={tune}"
         if grain > 0:
             svt_params += f":film-grain={grain}:film-grain-denoise=1"
         cmd.extend(["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-svtav1-params", svt_params])
+    elif is_gpu:
+        gpu_crf = min(51, crf)
+        cmd.extend(["-c:v", encoder])
+        if encoder == "av1_nvenc":
+            cmd.extend(["-cq", str(gpu_crf), "-preset", "p" + str(min(7, max(1, 8 - int(preset))))])
+        elif encoder == "av1_amf":
+            cmd.extend(["-rc", "cqp", "-qp_i", str(gpu_crf), "-qp_p", str(gpu_crf)])
+        elif encoder == "av1_qsv":
+            cmd.extend(["-global_quality", str(max(1, gpu_crf))])
     else:
         cmd.extend(["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset)])
     
@@ -63,7 +75,7 @@ def encode_video(input_path, output_path, quality=50, preset=6,
     print(f"[CMD] {' '.join(cmd)}")
     print()
     
-    # Run FFmpeg
+    # Run FFmpeg (stdout inherited, stderr piped for progress)
     process = subprocess.Popen(cmd, stderr=subprocess.PIPE, universal_newlines=True)
     
     for line in process.stderr:
@@ -108,7 +120,7 @@ Examples:
     parser.add_argument("-p", "--preset", type=int, default=6, choices=range(0, 14),
                         help="Speed preset 0-13 (default: 6, lower=slower/better)")
     parser.add_argument("-e", "--encoder", default="libsvtav1",
-                        choices=["libsvtav1", "libaom-av1", "librav1e"],
+                        choices=["libsvtav1", "libaom-av1", "librav1e", "av1_nvenc", "av1_amf", "av1_qsv"],
                         help="AV1 encoder to use (default: libsvtav1)")
     parser.add_argument("-a", "--audio", default="libopus",
                         choices=["libopus", "aac", "copy", "none"],

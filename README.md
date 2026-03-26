@@ -53,7 +53,6 @@ A professional-grade GUI application for encoding videos to AV1 format using FFm
 | **NVENC** | GPU | NVIDIA RTX 40 series | ⚠️ Hardware required |
 | **AMF** | GPU | AMD RX 7000 series | ⚠️ Hardware required |
 | **QSV** | GPU | Intel Arc GPU | ⚠️ Hardware required |
-| **Vulkan** | GPU | Vulkan AV1-capable GPU | ⚠️ Hardware required |
 
 > **Note:** GPU encoders require specific hardware. If encoding fails with a GPU encoder, switch to SVT-AV1 (CPU) in Settings.
 
@@ -65,7 +64,7 @@ A professional-grade GUI application for encoding videos to AV1 format using FFm
 
 ### ℹ️ About Tab
 
-- **Version** - 1.1.0
+- **Version** - 1.1.5
 - **Application Info** - Credits and links
 - **GitHub Link** - Opens project repository
 
@@ -195,8 +194,7 @@ docker-compose run batch
 ## Known Issues
 
 1. **GPU Encoders** - Require specific hardware (RTX 40, RX 7000, Intel Arc)
-2. **Vulkan Encoder** - May fail on systems without Vulkan AV1 support
-3. **Large Files** - Very long videos may take extended time
+2. **Large Files** - Very long videos may take extended time
 
 ## Building from Source
 
@@ -237,4 +235,4 @@ Output: `dist/AV1_Encoder_Pro.exe`
 
 ## License
 
-© 2025 AV1 Encoder Pro. All rights reserved.
+© 2026 AV1 Encoder Pro. All rights reserved.

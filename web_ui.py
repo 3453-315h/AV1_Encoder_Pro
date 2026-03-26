@@ -12,7 +12,8 @@ from datetime import datetime
 
 
 # Constants
-ENCODERS = ["libsvtav1", "libaom-av1", "librav1e"]
+ENCODERS = ["libsvtav1", "libaom-av1", "librav1e", "av1_nvenc", "av1_amf", "av1_qsv"]
+CLI_SCRIPT = os.environ.get("CLI_PATH", str(Path(__file__).parent / "encode_cli.py"))
 AUDIO_CODECS = ["libopus", "aac", "copy", "none"]
 RESOLUTIONS = ["original", "4k", "1080p", "720p", "480p"]
 TUNE_OPTIONS = ["VQ (Visual Quality)", "PSNR", "SSIM"]
@@ -57,7 +58,7 @@ def encode_video(
         
         # Build command
         cmd = [
-            "python", "/app/encode_cli.py",
+            "python", CLI_SCRIPT,
             "-i", str(input_path),
             "-o", str(output_path),
             "-q", str(quality),

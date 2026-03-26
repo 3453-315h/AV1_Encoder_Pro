@@ -8,7 +8,7 @@
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
   <Support>https://github.com/3453-315h/AV1_Encoder_Pro/issues</Support>
-  <Project>https://github.com/3453-315h/AV1_Encoder_Proyes</Project>
+  <Project>https://github.com/3453-315h/AV1_Encoder_Pro</Project>
   <Overview>Professional AV1 Video Encoder with Web UI.&#xD;
 &#xD;
 Features:&#xD;
@@ -22,6 +22,7 @@ Access Web UI at http://[IP]:[PORT:2081]</Overview>
   <Category>MediaApp:Video</Category>
   <WebUI>http://[IP]:[PORT:2081]/</WebUI>
   <TemplateURL/>
+  <!-- TODO: Replace with custom AV1 Encoder Pro icon -->
   <Icon>https://raw.githubusercontent.com/linuxserver/docker-templates/master/linuxserver.io/img/handbrake-icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
@@ -44,7 +45,7 @@ Access Web UI at http://[IP]:[PORT:2081]</Overview>
     <Volume>
       <HostDir>/mnt/user/Isos/Source/</HostDir>
       <ContainerDir>/videos</ContainerDir>
-      <Mode>rw</Mode>
+      <Mode>ro</Mode>
     </Volume>
     <Volume>
       <HostDir>/mnt/user/Isos/Converted/</HostDir>

@@ -42,22 +42,22 @@ services:
     environment:
       - PYTHONIOENCODING=utf-8
     working_dir: /app
-    # Override to run batch encoding
-    entrypoint: /bin/bash
-    command: |
-      -c '
-      echo "=== AV1 Batch Encoder ==="
-      echo "Encoding all videos in /videos to /output..."
-      for f in /videos/*.{mp4,mkv,avi,mov,webm}; do
-        if [ -f "$$f" ]; then
-          filename=$$(basename "$$f")
-          name="$${filename%.*}"
-          echo "Encoding: $$filename"
-          python /app/encode_cli.py -i "$$f" -o "/output/$${name}_av1.webm" -q 50 -p 6
-        fi
-      done
-      echo "=== Batch complete ==="
-      '
+    # Override to run batch encoding (must use bash for brace expansion)
+    entrypoint: [ "/bin/bash", "-c" ]
+    command:
+      - |
+        echo "=== AV1 Batch Encoder ==="
+        echo "Encoding all videos in /videos to /output..."
+        shopt -s nullglob
+        for f in /videos/*.{mp4,mkv,avi,mov,webm}; do
+          if [ -f "$$f" ]; then
+            filename=$$(basename "$$f")
+            name="$${filename%.*}"
+            echo "Encoding: $$filename"
+            python /app/encode_cli.py -i "$$f" -o "/output/$${name}_av1.webm" -q 50 -p 6
+          fi
+        done
+        echo "=== Batch complete ==="
 
   # Web UI Mode (Browser access - works on all platforms)
   web:

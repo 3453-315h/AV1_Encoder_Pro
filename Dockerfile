@@ -10,7 +10,7 @@ FROM python:3.11-slim-bookworm
 
 LABEL maintainer="AV1 Encoder Pro"
 LABEL description="Professional AV1 Video Encoder with FFmpeg and SVT-AV1"
-LABEL version="1.1.0"
+LABEL version="1.1.5"
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -37,7 +37,7 @@ WORKDIR /app
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir customtkinter>=5.0.0 Pillow>=9.0.0 gradio>=4.0.0
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY av1_encoder_ctk.py .
@@ -47,11 +47,14 @@ COPY assets/ ./assets/
 
 # Copy entrypoint script
 COPY entrypoint.sh .
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Create volumes for video files
 RUN mkdir -p /videos /output
 VOLUME ["/videos", "/output"]
+
+# Expose web UI port
+EXPOSE 2081
 
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]
