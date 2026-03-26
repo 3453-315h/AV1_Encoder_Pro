@@ -64,7 +64,7 @@ A professional-grade GUI application for encoding videos to AV1 format using FFm
 
 ### ℹ️ About Tab
 
-- **Version** - 1.1.5
+- **Version** - 1.2.0
 - **Application Info** - Credits and links
 - **GitHub Link** - Opens project repository
 

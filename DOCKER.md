@@ -152,13 +152,13 @@ To share your encoder image on Docker Hub:
 2.  **Tag the Image**
     Replace `your-username` with your actual Docker Hub username.
     ```bash
-    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.1.5
+    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.2.0
     docker tag av1-encoder-pro your-username/av1-encoder-pro:latest
     ```
 
 3.  **Push to Docker Hub**
     ```bash
-    docker push your-username/av1-encoder-pro:v1.1.5
+    docker push your-username/av1-encoder-pro:v1.2.0
     docker push your-username/av1-encoder-pro:latest
     ```
 

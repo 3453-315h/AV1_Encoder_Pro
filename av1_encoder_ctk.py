@@ -584,7 +584,7 @@ class AV1EncoderPro(ctk.CTk):
             # Logo loading failed - non-critical, continue without logo
             pass
             
-        ctk.CTkLabel(card, text="Version 1.1.5",
+        ctk.CTkLabel(card, text="Version 1.2.0",
                     font=ctk.CTkFont(size=12)).pack(pady=(0, 10))
                     
         ctk.CTkLabel(card, text="A modern AV1 video encoder powered by FFmpeg and SVT-AV1.",
@@ -1137,8 +1137,8 @@ class AV1EncoderPro(ctk.CTk):
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             return bool(result.stdout.strip())
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            # If ffprobe fails, assume audio exists (safe default)
-            return True
+            # If ffprobe fails, assume no audio (avoids spurious -b:a warnings on video-only files)
+            return False
     
     def start_encode(self):
         inp = self.input_var.get()
@@ -1235,9 +1235,10 @@ class AV1EncoderPro(ctk.CTk):
             svt_params = f"tune={tune_val}"
             if grain > 0:
                 svt_params += f":film-grain={grain}:film-grain-denoise=1"
-            encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-svtav1-params", svt_params]
+            # SVT-AV1 does NOT accept bare -threads; pass thread count via svtav1-params
             if threads > 0:
-                encoder_opts.extend(["-threads", str(threads)])
+                svt_params += f":logical-processors={threads}"
+            encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-svtav1-params", svt_params]
         elif is_gpu:
             # GPU encoders require specific hardware - warn user
             gpu_requirements = {
@@ -1257,8 +1258,11 @@ class AV1EncoderPro(ctk.CTk):
                 encoder_opts.extend(["-rc", "cqp", "-qp_i", str(gpu_crf), "-qp_p", str(gpu_crf)])
             elif encoder == "av1_qsv":
                 encoder_opts.extend(["-global_quality", str(max(1, gpu_crf))])
+        elif encoder == "librav1e":
+            # rav1e uses -speed (not -cpu-used) and doesn't accept -threads
+            encoder_opts = ["-c:v", encoder, "-qp", str(crf), "-speed", str(preset)]
         else:
-            # libaom or rav1e (CPU encoders)
+            # libaom-av1: uses -cpu-used and -threads
             encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset)]
             if threads > 0:
                 encoder_opts.extend(["-threads", str(threads)])
