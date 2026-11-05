@@ -10,6 +10,11 @@ elif [ "$MODE" = "gui" ]; then
     echo "Starting Desktop GUI..."
     exec python av1_encoder_ctk.py
 else
+    # If the user passed 'encode_cli.py' as the first argument, shift it away
+    if [ "$1" = "encode_cli.py" ]; then
+        shift
+    fi
+
     # CLI mode - pass all arguments to the CLI script
     # If no arguments provided, show help
     if [ $# -eq 0 ]; then

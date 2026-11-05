@@ -14,8 +14,8 @@
 Features:&#xD;
 - Simple Drag &amp; Drop Web Interface&#xD;
 - SVT-AV1, AOM-AV1, RAV1E support&#xD;
-- Batch processing&#xD;
-- Visual Quality Metrics&#xD;
+- Live encoding progress &amp; elapsed time&#xD;
+- Configurable quality presets, tunes, and film grain&#xD;
 &#xD;
 Usage:&#xD;
 Access Web UI at http://[IP]:[PORT:2081]</Overview>
@@ -55,9 +55,11 @@ Access Web UI at http://[IP]:[PORT:2081]</Overview>
   </Data>
   <Environment/>
   <Config Name="Web UI Port" Target="2081" Default="2081" Mode="tcp" Description="Port for the Web UI" Type="Port" Display="always" Required="true" Mask="false">2081</Config>
-  <Config Name="Input Videos Path" Target="/videos" Default="/mnt/user/Isos/Source/" Mode="rw" Description="Path to source video files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Source/</Config>
+  <Config Name="Input Videos Path" Target="/videos" Default="/mnt/user/Isos/Source/" Mode="ro" Description="Path to source video files (read-only)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Source/</Config>
   <Config Name="Output Path" Target="/output" Default="/mnt/user/Isos/Converted/" Mode="rw" Description="Path for encoded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Isos/Converted/</Config>
   <Config Name="Run Mode" Target="MODE" Default="web" Mode="" Description="Mode to run: 'web', 'cli', or 'gui'" Type="Variable" Display="always" Required="true" Mask="false">web</Config>
-  <Config Name="Gradio Server Name" Target="GRADIO_SERVER_NAME" Default="0.0.0.0" Mode="" Description="Server host (0.0.0.0 for public)" Type="Variable" Display="advanced" Required="false" Mask="false">0.0.0.0</Config>
-  <Config Name="Gradio Server Port" Target="GRADIO_SERVER_PORT" Default="2081" Mode="" Description="Server port" Type="Variable" Display="advanced" Required="false" Mask="false">2081</Config>
+  <Config Name="Web User (Optional)" Target="WEB_USER" Default="" Mode="" Description="Username for Web UI authentication (leave blank for no auth)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Web Password (Optional)" Target="WEB_PASSWORD" Default="" Mode="" Description="Password for Web UI authentication (leave blank for no auth)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="Server Host" Target="HOST" Default="0.0.0.0" Mode="" Description="Server host bind address" Type="Variable" Display="advanced" Required="false" Mask="false">0.0.0.0</Config>
+  <Config Name="Server Port" Target="PORT" Default="2081" Mode="" Description="Server port" Type="Variable" Display="advanced" Required="false" Mask="false">2081</Config>
 </Container>

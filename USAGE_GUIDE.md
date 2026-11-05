@@ -51,7 +51,6 @@ The main encoding interface for single video files.
    - **Container Format**: WebM (recommended) or MP4
    - **Resolution**: Original, 4K, 1080p, 720p, or 480p
    - **Film Grain**: Add synthetic film grain (0-50)
-   - **Two-Pass**: Enable for better quality (slower)
 
 6. **Start Encoding**
    - Click **Encode Video**
@@ -104,19 +103,17 @@ Process multiple videos at once.
 
 ## Scheduler Tab
 
-Schedule encoding tasks for later execution.
+Set up a scheduled start time for batch encoding.
 
-### Creating a Scheduled Task
+### Scheduling Batch Encoding
 
-1. **Select Folder** - Choose a folder with videos to encode
-2. **Set Date/Time** - Pick when encoding should start
-3. **Click Add to Schedule**
-
-### Managing Tasks
-
-- View all scheduled tasks in the task list
-- **Run Now** - Start task immediately
-- **Cancel** - Remove task from schedule
+1. Go to the **Scheduler** tab
+2. Choose **Today** or **Tomorrow**
+3. Enter the scheduled start time in 24-hour format (**Hour** and **Minute**)
+4. Switch to the **Batch Processing** tab, add your videos, and check **Schedule Encoding**
+5. Click **Start Batch / Schedule**
+6. The application will wait in-memory until the scheduled time and then execute the batch.
+   > **Note:** The application must remain open while waiting for the scheduled time. Clicking **Cancel** will abort the pending schedule or any active encoding.
 
 ---
 

@@ -1,14 +1,8 @@
-# AV1 Video Encoder Pro - Requirements
-# Install with: pip install -r requirements.txt
+# AV1 Video Encoder Pro - Complete Requirements
+# Install all dependencies: pip install -r requirements.txt
+# Or install separately:
+#   GUI only: pip install -r requirements-gui.txt
+#   Web only: pip install -r requirements-web.txt
 
-# Core UI framework
-customtkinter>=5.0.0
-
-# Image handling
-Pillow>=9.0.0
-
-# Drag and drop functionality (Windows)
-windnd>=1.0.7
-
-# Web UI (Docker)
-gradio>=4.0.0
+-r requirements-gui.txt
+-r requirements-web.txt

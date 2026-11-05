@@ -1,0 +1,5 @@
+# AV1 Video Encoder Pro - GUI Requirements
+customtkinter>=5.0.0,<6.0.0
+Pillow>=9.0.0,<12.0.0
+windnd>=1.0.7; sys_platform == 'win32'
+

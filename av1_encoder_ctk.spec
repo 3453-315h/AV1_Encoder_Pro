@@ -10,12 +10,17 @@ ctk_path = os.path.dirname(customtkinter.__file__)
 
 block_cipher = None
 
+# Bundle FFmpeg/FFprobe binaries if provided in root, otherwise rely on system PATH
+extra_binaries = []
+if os.path.exists('ffmpeg.exe'):
+    extra_binaries.append(('ffmpeg.exe', '.'))
+if os.path.exists('ffprobe.exe'):
+    extra_binaries.append(('ffprobe.exe', '.'))
+
 a = Analysis(
     ['av1_encoder_ctk.py'],
     pathex=[],
-    binaries=[
-        ('ffmpeg.exe', '.'),  # Bundle FFmpeg for self-contained app
-    ],
+    binaries=extra_binaries,
     datas=[
         ('assets/av1_codec_logo.png', 'assets'),
         ('assets/CustomTkinter_icon_Windows.ico', 'assets'),

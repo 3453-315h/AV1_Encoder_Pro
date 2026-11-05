@@ -11,6 +11,8 @@ import threading
 import queue
 import datetime
 import webbrowser
+import collections
+import av1core
 
 # Platform detection for cross-platform compatibility
 IS_WINDOWS = sys.platform == 'win32'
@@ -72,6 +74,13 @@ class AV1EncoderPro(ctk.CTk):
         self.console_queue = queue.Queue()
         self.after(100, self.process_console_queue)
         
+        # Process and lifecycle tracking
+        self.active_processes = []
+        self._cancel_requested = False
+        self._schedule_cancelled = False
+        self._scheduled_thread = None
+        self._batch_running = False
+        
         # Build UI
         self.build_tabs()
         
@@ -100,9 +109,6 @@ class AV1EncoderPro(ctk.CTk):
         
         # Check FFmpeg
         self.check_ffmpeg()
-        
-        # Track active encoding processes for cleanup
-        self.active_processes = []
         
         # Setup Drag and Drop (Windows only)
         if windnd is not None:
@@ -149,6 +155,9 @@ class AV1EncoderPro(ctk.CTk):
                     for root, dirs, files in os.walk(path):
                         for f in files:
                             if f.lower().endswith(video_extensions):
+                                base_stem = os.path.splitext(f)[0]
+                                if base_stem.endswith("_AV1") or base_stem.endswith("_av1"):
+                                    continue
                                 full_path = os.path.join(root, f)
                                 if full_path not in self.batch_files:
                                     self.batch_files.append(full_path)
@@ -156,6 +165,9 @@ class AV1EncoderPro(ctk.CTk):
                                     added_count += 1
                 elif os.path.isfile(path) and path.lower().endswith(video_extensions):
                     # It's a video file
+                    base_stem = os.path.splitext(os.path.basename(path))[0]
+                    if base_stem.endswith("_AV1") or base_stem.endswith("_av1"):
+                        continue
                     if path not in self.batch_files:
                         self.batch_files.append(path)
                         self.batch_listbox.insert("end", path + "\n")
@@ -584,7 +596,7 @@ class AV1EncoderPro(ctk.CTk):
             # Logo loading failed - non-critical, continue without logo
             pass
             
-        ctk.CTkLabel(card, text="Version 1.2.0",
+        ctk.CTkLabel(card, text=f"Version {av1core.__version__}",
                     font=ctk.CTkFont(size=12)).pack(pady=(0, 10))
                     
         ctk.CTkLabel(card, text="A modern AV1 video encoder powered by FFmpeg and SVT-AV1.",
@@ -616,6 +628,9 @@ class AV1EncoderPro(ctk.CTk):
         for root, dirs, files in os.walk(folder):
             for file in files:
                 if os.path.splitext(file.lower())[1] in video_exts:
+                    base_name = os.path.splitext(file)[0]
+                    if base_name.endswith("_AV1") or base_name.endswith("_av1"):
+                        continue
                     full_path = os.path.join(root, file)
                     if full_path not in self.batch_files:
                         self.batch_files.append(full_path)
@@ -632,10 +647,42 @@ class AV1EncoderPro(ctk.CTk):
         if not self.batch_files:
             self.log("[ERROR] No files in batch queue.")
             return
+            
+        if getattr(self, '_batch_running', False):
+            self.log("[WARNING] A batch encoding job is already running.")
+            return
+
+        if getattr(self, '_scheduled_thread', None) and self._scheduled_thread.is_alive():
+            self.log("[WARNING] A batch schedule is already active. Cancel it before scheduling another.")
+            return
+        
+        # Snapshot settings on UI thread
+        try:
+            q = self.quality_var.get()
+            crf = int(round(63 - (q * 0.63)))
+            preset = self.preset_var.get().split()[0]
+        except (AttributeError, ValueError, IndexError):
+            crf = 30
+            preset = "6"
+            
+        custom_folder = ""
+        if hasattr(self, 'batch_output_var'):
+            custom_folder = self.batch_output_var.get()
+            
+        format_val = "WebM"
+        if hasattr(self, 'format_var'):
+            format_val = self.format_var.get()
+            
+        settings = {
+            'crf': crf,
+            'preset': preset,
+            'custom_folder': custom_folder,
+            'ext': ".webm" if format_val == "WebM" else ".mp4",
+        }
+        files = list(self.batch_files)
         
         # Check if scheduled encoding is enabled
         if hasattr(self, 'schedule_enabled_var') and self.schedule_enabled_var.get():
-            # Calculate delay until scheduled time
             try:
                 hour = int(self.schedule_hour.get() or 0)
                 minute = int(self.schedule_min.get() or 0)
@@ -646,7 +693,6 @@ class AV1EncoderPro(ctk.CTk):
                 if self.schedule_date_var.get() == "Tomorrow":
                     scheduled += datetime.timedelta(days=1)
                 elif scheduled <= now:
-                    # If time already passed today, schedule for tomorrow
                     scheduled += datetime.timedelta(days=1)
                 
                 delay = (scheduled - now).total_seconds()
@@ -654,13 +700,18 @@ class AV1EncoderPro(ctk.CTk):
                 if delay > 0:
                     self.log(f"[SCHEDULED] Batch will start at {scheduled.strftime('%Y-%m-%d %H:%M')}")
                     self.log(f"[INFO] Waiting {int(delay // 60)} minutes...")
-                    threading.Thread(target=self._scheduled_batch_start, args=(delay,), daemon=True).start()
+                    self._scheduled_thread = threading.Thread(
+                        target=self._scheduled_batch_start,
+                        args=(delay, files, settings),
+                        daemon=True
+                    )
+                    self._scheduled_thread.start()
                     return
             except (ValueError, AttributeError):
                 self.log("[WARNING] Invalid schedule time, starting immediately...")
         
-        self.log(f"[INFO] Starting batch of {len(self.batch_files)} files...")
-        threading.Thread(target=self.run_batch, daemon=True).start()
+        self.log(f"[INFO] Starting batch of {len(files)} files...")
+        threading.Thread(target=self.run_batch, args=(files, settings), daemon=True).start()
     
     def _validate_schedule_time(self):
         """Clamp schedule hour/minute inputs to valid ranges"""
@@ -679,55 +730,91 @@ class AV1EncoderPro(ctk.CTk):
         except (ValueError, TypeError):
             pass
     
-    def _scheduled_batch_start(self, delay):
+    def _scheduled_batch_start(self, delay, files, settings):
         """Wait for scheduled time then start batch (cancellable)"""
         import time
         self._schedule_cancelled = False
-        elapsed = 0
-        while elapsed < delay:
-            if self._schedule_cancelled:
+        self._cancel_requested = False
+        target_time = datetime.datetime.now() + datetime.timedelta(seconds=delay)
+        
+        while datetime.datetime.now() < target_time:
+            if self._schedule_cancelled or self._cancel_requested:
                 self.log("[INFO] Scheduled batch was cancelled.")
                 return
-            time.sleep(min(5, delay - elapsed))
-            elapsed += 5
-            remaining_min = max(0, int((delay - elapsed) // 60))
-            if remaining_min > 0 and elapsed % 60 < 6:
-                self.log(f"[SCHEDULE] {remaining_min} minutes remaining...")
-        self.log(f"[INFO] Schedule triggered! Starting batch of {len(self.batch_files)} files...")
-        self.run_batch()
+            time.sleep(1)
+            now = datetime.datetime.now()
+            remaining_sec = (target_time - now).total_seconds()
+            if remaining_sec > 0 and int(remaining_sec) % 60 == 0:
+                mins = int(remaining_sec // 60)
+                self.log(f"[SCHEDULE] {mins} minutes remaining until batch start...")
+                
+        if not (self._schedule_cancelled or self._cancel_requested):
+            self.log(f"[INFO] Schedule triggered! Starting batch of {len(files)} files...")
+            self.run_batch(files, settings)
     
-    def run_batch(self):
+    def run_batch(self, files=None, settings=None):
         """Run batch encoding of all files with progress and cancel support"""
-        try:
-            q = self.quality_var.get()
-            crf = int(63 - (q * 0.63))
-            preset = self.preset_var.get().split()[0]
-        except (AttributeError, ValueError, IndexError):
-            crf = 30
-            preset = "6"
-            
+        self._batch_running = True
+        self._cancel_requested = False
+        self._schedule_cancelled = False
+        
+        if files is None:
+            files = list(self.batch_files)
+        if settings is None:
+            try:
+                q = self.quality_var.get()
+                crf = int(round(63 - (q * 0.63)))
+                preset = self.preset_var.get().split()[0]
+            except (AttributeError, ValueError, IndexError):
+                crf = 30
+                preset = "6"
+            custom_folder = getattr(self, 'batch_output_var', ctk.StringVar()).get()
+            ext = ".webm" if getattr(self, 'format_var', ctk.StringVar(value="WebM")).get() == "WebM" else ".mp4"
+            settings = {'crf': crf, 'preset': preset, 'custom_folder': custom_folder, 'ext': ext}
+
         succeeded = 0
         failed = 0
+        skipped = 0
+        cancelled = False
         
-        for i, inp in enumerate(self.batch_files):
-            self.log(f"[BATCH {i+1}/{len(self.batch_files)}] {os.path.basename(inp)}")
+        for i, inp in enumerate(files):
+            if self._cancel_requested:
+                self.log(f"[CANCEL] Batch cancelled by user. Stopped at file {i+1} of {len(files)}.")
+                cancelled = True
+                break
+                
+            base_name = os.path.splitext(os.path.basename(inp))[0]
+            if base_name.endswith("_AV1") or base_name.endswith("_av1"):
+                self.log(f"[SKIP] Skipping previously encoded file: {os.path.basename(inp)}")
+                skipped += 1
+                continue
+                
+            folder = settings['custom_folder'] if settings['custom_folder'] else os.path.dirname(inp)
+            ext = settings['ext']
+            target_out = os.path.join(folder, f"{base_name}_AV1{ext}")
             
-            # Use custom output folder if specified, else same as source
-            custom_folder = getattr(self, 'batch_output_var', ctk.StringVar()).get()
-            folder = custom_folder if custom_folder else os.path.dirname(inp)
-            
-            name = os.path.splitext(os.path.basename(inp))[0]
-            # Output extension based on dropdown
-            ext = ".webm" if self.format_var.get() == "WebM" else ".mp4"
-            out = os.path.join(folder, f"{name}_AV1{ext}")
+            # Avoid overwriting existing completed file - generate unique sibling if target exists
+            if os.path.exists(target_out):
+                counter = 1
+                while os.path.exists(os.path.join(folder, f"{base_name}_AV1_{counter}{ext}")):
+                    counter += 1
+                target_out = os.path.join(folder, f"{base_name}_AV1_{counter}{ext}")
+                self.log(f"[INFO] Target exists, using non-colliding name: {os.path.basename(target_out)}")
+                
+            tmp_out = f"{target_out}.tmp.{os.getpid()}{ext}"
             
             try:
-                steps = self.compile_encode_commands(inp, out, crf, preset)
+                steps = self.compile_encode_commands(inp, tmp_out, settings['crf'], settings['preset'])
+                file_failed = False
                 for step_name, cmd in steps:
+                    if self._cancel_requested:
+                        file_failed = True
+                        break
+                    
+                    self.log(f"[BATCH {i+1}/{len(files)}] {os.path.basename(inp)}")
                     self.log(f"  > Executing {step_name}...")
                     self.log(f"  [CMD] {' '.join(cmd)}")
                     
-                    # Set UTF-8 environment for unicode filename support
                     env = os.environ.copy()
                     env['PYTHONIOENCODING'] = 'utf-8'
                     env['PYTHONUTF8'] = '1'
@@ -747,30 +834,76 @@ class AV1EncoderPro(ctk.CTk):
                     process = subprocess.Popen(cmd, **popen_kwargs)
                     self.active_processes.append(process)
                     
-                    # Stream progress from stderr
+                    stderr_tail = collections.deque(maxlen=20)
                     for line in process.stderr:
                         try:
                             decoded = line.decode('utf-8', errors='replace') if isinstance(line, bytes) else line
+                            decoded_str = decoded.strip()
+                            stderr_tail.append(decoded_str)
                             if "frame=" in decoded or "size=" in decoded or "time=" in decoded:
-                                self.log(f"  [PROGRESS] {decoded.strip()}")
+                                self.log(f"  [PROGRESS] {decoded_str}")
                         except Exception:
                             pass
                     
                     process.wait()
-                    
+                    if process.stderr:
+                        try:
+                            process.stderr.close()
+                        except Exception:
+                            pass
+                            
                     if process in self.active_processes:
                         self.active_processes.remove(process)
                     
-                    if process.returncode != 0:
-                        raise Exception(f"{step_name} failed with code {process.returncode}")
+                    if self._cancel_requested:
+                        file_failed = True
+                        break
                         
-                self.log(f"[DONE] {os.path.basename(out)}")
-                succeeded += 1
+                    if process.returncode != 0:
+                        file_failed = True
+                        self.log(f"  [ERROR] {step_name} failed with code {process.returncode}")
+                        self.log("  [STDERR DIAGNOSTICS]:")
+                        for err_line in stderr_tail:
+                            self.log(f"    {err_line}")
+                        break
+                        
+                if self._cancel_requested:
+                    if os.path.exists(tmp_out):
+                        try:
+                            os.remove(tmp_out)
+                        except OSError:
+                            pass
+                    self.log(f"[CANCEL] Batch cancelled during {os.path.basename(inp)}.")
+                    cancelled = True
+                    break
+                elif file_failed:
+                    if os.path.exists(tmp_out):
+                        try:
+                            os.remove(tmp_out)
+                        except OSError:
+                            pass
+                    failed += 1
+                else:
+                    if os.path.exists(tmp_out):
+                        os.replace(tmp_out, target_out)
+                        self.log(f"[DONE] {os.path.basename(target_out)}")
+                        succeeded += 1
+                    else:
+                        failed += 1
             except Exception as e:
+                if os.path.exists(tmp_out):
+                    try:
+                        os.remove(tmp_out)
+                    except OSError:
+                        pass
                 self.log(f"[ERROR] Failed {os.path.basename(inp)}: {str(e)}")
                 failed += 1
         
-        self.log(f"[BATCH COMPLETED] {succeeded} succeeded, {failed} failed out of {len(self.batch_files)} files.")
+        self._batch_running = False
+        summary = f"[BATCH COMPLETE] Succeeded: {succeeded}, Failed: {failed}, Skipped: {skipped}"
+        if cancelled:
+            summary += " (Cancelled by user)"
+        self.log(summary)
     
     def build_input_card(self, parent):
         """Input Source card"""
@@ -1124,21 +1257,25 @@ class AV1EncoderPro(ctk.CTk):
         except (FileNotFoundError, OSError):
             self.log("[ERROR] FFmpeg not found. Please install FFmpeg.")
     
-    def _probe_has_audio(self, input_path):
-        """Use ffprobe to check if the input file has an audio stream"""
+    def _probe_audio_info(self, input_path):
+        """Use ffprobe to check if audio stream exists and return its codec name"""
         try:
             cmd = [
                 self.ffprobe_path, "-v", "error",
-                "-select_streams", "a",
-                "-show_entries", "stream=codec_type",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=codec_name",
                 "-of", "csv=p=0",
                 input_path
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            return bool(result.stdout.strip())
+            codec = result.stdout.strip()
+            return codec if codec else None
         except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-            # If ffprobe fails, assume no audio (avoids spurious -b:a warnings on video-only files)
-            return False
+            return None
+
+    def _probe_has_audio(self, input_path):
+        """Use ffprobe to check if the input file has an audio stream"""
+        return self._probe_audio_info(input_path) is not None
     
     def start_encode(self):
         inp = self.input_var.get()
@@ -1162,85 +1299,33 @@ class AV1EncoderPro(ctk.CTk):
         threading.Thread(target=self.run_encode, args=(inp, out, crf, preset), daemon=True).start()
     
     def compile_encode_commands(self, inp, out, crf, preset):
-        """Generate FFmpeg commands based on current UI settings"""
-        # Film Grain (must be read before tune check)
+        """Generate FFmpeg commands based on current UI settings via shared av1core"""
         grain = self.grain_var.get()
-
-        # Audio — probe input to check if audio stream exists
-        audio = self.audio_var.get()
-        bitrate = self.audio_bitrate_var.get()
-        has_audio = self._probe_has_audio(inp)
-        
-        if not has_audio:
-            # No audio stream in input — force no audio regardless of UI setting
-            if audio != "No Audio":
-                self.log("[INFO] Input has no audio stream — skipping audio options.")
-            audio_opts = ["-an"]
-        else:
-            # Safety for WebM container: Force Opus if Copy is selected (usually AAC)
-            is_webm = out.lower().endswith(".webm")
-            
-            if audio == "Copy":
-                if is_webm:
-                    self.log("[INFO] 'Copy' audio into WebM is unsafe. Auto-switching to Opus (128k).")
-                    audio_opts = ["-c:a", "libopus", "-b:a", "128k"]
-                else:
-                    audio_opts = ["-c:a", "copy"]
-            elif audio == "Opus (Recommended)":
-                audio_opts = ["-c:a", "libopus", "-b:a", bitrate]
-            elif audio == "AAC":
-                audio_opts = ["-c:a", "aac", "-b:a", bitrate]
-            elif audio == "No Audio":
-                audio_opts = ["-an"]
-            else:
-                audio_opts = ["-c:a", "copy"]
-
-        # Tune
         tune = self.tune_var.get()
         tune_map = {"VQ (Visual Quality)": "0", "PSNR": "1", "SSIM": "2", "Film": "0"}
         tune_val = tune_map.get(tune, "0")
-        # "Film" mode: auto-apply film grain if not manually set
         if tune == "Film" and grain == 0:
             grain = 8
             self.log("[INFO] Film tune selected — auto-applying film-grain=8")
 
-        # Resolution
+        audio = self.audio_var.get()
+        audio_map = {
+            "Opus (Recommended)": "libopus",
+            "AAC": "aac",
+            "Copy": "copy",
+            "No Audio": "none"
+        }
+        audio_codec = audio_map.get(audio, "libopus")
+        audio_bitrate = self.audio_bitrate_var.get()
+
         resolution = self.resolution_var.get()
-        scale_opts = []
-        if resolution != "Original":
-            res_map = {
-                "4K (3840x2160)": "3840:2160",
-                "1080p (1920x1080)": "1920:1080",
-                "720p (1280x720)": "1280:720",
-                "480p (854x480)": "854:480"
-            }
-            if resolution in res_map:
-                scale_opts = ["-vf", f"scale={res_map[resolution]}:flags=lanczos"]
-        
-        # Get encoder from Settings
+        res_val = None if resolution == "Original" else resolution
+
         encoder = getattr(self, 'encoder_var', ctk.StringVar(value="libsvtav1")).get()
         threads = getattr(self, 'thread_var', ctk.IntVar(value=0)).get()
-        
-        # Log encoder
         self.log(f"[INFO] Encoder: {encoder}")
-        
-        # Check if encoder is SVT-AV1 (supports svtav1-params)
-        is_svt = encoder == "libsvtav1"
-        is_gpu = encoder in ["av1_nvenc", "av1_amf", "av1_qsv"]
-        
-        # Build encoder-specific options
-        encoder_opts = []
-        
-        if is_svt:
-            svt_params = f"tune={tune_val}"
-            if grain > 0:
-                svt_params += f":film-grain={grain}:film-grain-denoise=1"
-            # SVT-AV1 does NOT accept bare -threads; pass thread count via svtav1-params
-            if threads > 0:
-                svt_params += f":logical-processors={threads}"
-            encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-preset", str(preset), "-svtav1-params", svt_params]
-        elif is_gpu:
-            # GPU encoders require specific hardware - warn user
+
+        if encoder in av1core.GPU_ENCODERS:
             gpu_requirements = {
                 "av1_nvenc": "NVIDIA RTX 40 series GPU",
                 "av1_amf": "AMD RX 7000 series GPU", 
@@ -1248,28 +1333,34 @@ class AV1EncoderPro(ctk.CTk):
             }
             self.log(f"[WARNING] {encoder} requires {gpu_requirements.get(encoder, 'specific GPU hardware')}")
             self.log("[INFO] If encoding fails, switch to SVT-AV1 (CPU) in Settings")
-            
-            # GPU encoders use different quality parameters (clamped to 0-51)
-            gpu_crf = min(51, crf)
-            encoder_opts = ["-c:v", encoder]
-            if encoder == "av1_nvenc":
-                encoder_opts.extend(["-cq", str(gpu_crf), "-preset", "p" + str(min(7, max(1, 8 - int(preset))))])
-            elif encoder == "av1_amf":
-                encoder_opts.extend(["-rc", "cqp", "-qp_i", str(gpu_crf), "-qp_p", str(gpu_crf)])
-            elif encoder == "av1_qsv":
-                encoder_opts.extend(["-global_quality", str(max(1, gpu_crf))])
-        elif encoder == "librav1e":
-            # rav1e uses -speed (not -cpu-used) and doesn't accept -threads
-            encoder_opts = ["-c:v", encoder, "-qp", str(crf), "-speed", str(preset)]
-        else:
-            # libaom-av1: uses -cpu-used and -threads
-            encoder_opts = ["-c:v", encoder, "-crf", str(crf), "-cpu-used", str(preset)]
-            if threads > 0:
-                encoder_opts.extend(["-threads", str(threads)])
 
-        # Warn if output already exists
+        # Map CRF back to 0-100 quality scale for av1core
+        quality_equiv = int(round((63 - crf) / 0.63))
+
+        cmd, notices = av1core.build_ffmpeg_command(
+            input_path=inp,
+            output_path=out,
+            quality=quality_equiv,
+            preset=preset,
+            encoder=encoder,
+            audio_codec=audio_codec,
+            audio_bitrate=audio_bitrate,
+            resolution=res_val,
+            tune=tune_val,
+            grain=grain,
+            threads=threads,
+            ffmpeg_path=self.ffmpeg_path,
+            ffprobe_path=self.ffprobe_path
+        )
+
+        for n in notices:
+            tag = "WARNING" if "clamped" in n.lower() else "INFO"
+            self.log(f"[{tag}] {n}")
+
         if os.path.exists(out):
             self.log(f"[WARNING] Output file already exists and will be overwritten: {os.path.basename(out)}")
+
+        return [("ENCODE", cmd)]
         
         # Build single-pass encode command
         cmd = [self.ffmpeg_path, "-y", "-i", inp]
@@ -1281,10 +1372,16 @@ class AV1EncoderPro(ctk.CTk):
         return [("ENCODE", cmd)]
 
     def run_encode(self, inp, out, crf, preset):
+        self._cancel_requested = False
+        out_ext = os.path.splitext(out)[1]
+        tmp_out = f"{out}.tmp.{os.getpid()}{out_ext}"
         try:
-            steps = self.compile_encode_commands(inp, out, crf, preset)
+            steps = self.compile_encode_commands(inp, tmp_out, crf, preset)
             
             for name, cmd in steps:
+                if self._cancel_requested:
+                    raise Exception("Encoding cancelled by user")
+
                 label = "[INFO]" if name == "ENCODE" else f"[{name}]"
                 self.log(f"{label} Starting...")
                 self.log(f"[CMD] {' '.join(cmd)}")
@@ -1309,31 +1406,59 @@ class AV1EncoderPro(ctk.CTk):
                 process = subprocess.Popen(cmd, **popen_kwargs)
                 self.active_processes.append(process)
                 
+                stderr_tail = collections.deque(maxlen=20)
                 # Read stderr as bytes and decode
                 for line in process.stderr:
                     try:
                         decoded = line.decode('utf-8', errors='replace') if isinstance(line, bytes) else line
+                        decoded_str = decoded.strip()
+                        stderr_tail.append(decoded_str)
                         if "frame=" in decoded or "size=" in decoded or "time=" in decoded:
-                            self.log(f"{label} {decoded.strip()}")
+                            self.log(f"{label} {decoded_str}")
                     except Exception:
                         pass
                         
                 process.wait()
+                if process.stderr:
+                    try:
+                        process.stderr.close()
+                    except Exception:
+                        pass
                 
                 if process in self.active_processes:
                     self.active_processes.remove(process)
                 
+                if self._cancel_requested:
+                    raise Exception("Encoding cancelled by user")
+
                 if process.returncode != 0:
+                    self.log("[ERROR] FFmpeg diagnostic output (last lines):")
+                    for err_line in stderr_tail:
+                        self.log(f"  {err_line}")
                     raise Exception(f"{name} failed with code {process.returncode}")
             
+            if os.path.exists(tmp_out):
+                os.replace(tmp_out, out)
             self.log("[DONE] Encoding complete!")
             
         except Exception as e:
+            if os.path.exists(tmp_out):
+                try:
+                    os.remove(tmp_out)
+                except OSError:
+                    pass
             self.log(f"[ERROR] {str(e)}")
+        finally:
+            if hasattr(self, 'encode_btn') and hasattr(self, 'cancel_btn'):
+                try:
+                    self.encode_btn.configure(state="normal")
+                    self.cancel_btn.configure(state="disabled")
+                except Exception:
+                    pass
     
     def cancel_encode(self):
         """Cancel all running encode processes and scheduled batches"""
-        # Cancel scheduled batch if waiting
+        self._cancel_requested = True
         self._schedule_cancelled = True
         
         cancelled = 0
@@ -1354,6 +1479,14 @@ class AV1EncoderPro(ctk.CTk):
         if cancelled > 0:
             self.log(f"[CANCELLED] Stopped {cancelled} running process(es).")
         else:
+            self.log("[INFO] No active encoding process to stop (schedule/queue cancelled).")
+            
+        if hasattr(self, 'encode_btn') and hasattr(self, 'cancel_btn'):
+            try:
+                self.encode_btn.configure(state="normal")
+                self.cancel_btn.configure(state="disabled")
+            except Exception:
+                pass
             self.log("[INFO] No active encoding to cancel.")
     
     def reset_form(self):

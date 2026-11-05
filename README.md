@@ -64,7 +64,7 @@ A professional-grade GUI application for encoding videos to AV1 format using FFm
 
 ### ℹ️ About Tab
 
-- **Version** - 1.2.0
+- **Version** - 1.3.0
 - **Application Info** - Credits and links
 - **GitHub Link** - Opens project repository
 
@@ -73,25 +73,28 @@ A professional-grade GUI application for encoding videos to AV1 format using FFm
 ### For Running the Executable
 
 - **Windows 10/11**
-- **FFmpeg** (bundled with the exe)
+- **FFmpeg** (bundled if built with `ffmpeg.exe`, or auto-detected on system PATH)
 
 ### For Running from Source
 
-- **Python 3.8+**
-- **FFmpeg** with libsvtav1 support
-- **Dependencies**: `pip install customtkinter pillow windnd`
+- **Python 3.10+**
+- **FFmpeg** with libsvtav1, libaom, or librav1e support
+- **Dependencies**:
+  - Full: `pip install -r requirements.txt`
+  - GUI only: `pip install -r requirements-gui.txt`
+  - Web UI only: `pip install -r requirements-web.txt`
 
 ## Installation
 
 ### Using the Executable
 
 1. Download `AV1_Encoder_Pro.exe`
-2. Run (FFmpeg is bundled)
+2. Run (FFmpeg is auto-detected on PATH or bundled)
 
 ### From Source
 
 ```bash
-pip install customtkinter pillow windnd
+pip install -r requirements.txt
 python av1_encoder_ctk.py
 ```
 
@@ -132,6 +135,14 @@ Encode a single video:
 ```bash
 docker run -v $(pwd)/videos:/videos -v $(pwd)/output:/output av1-encoder-pro \
     -i /videos/input.mp4 -o /output/output.webm -q 50 -p 6
+```
+
+#### ERA Parameter Search (PUCT Monte Carlo)
+
+Find optimal SVT-AV1 parameters for a reference clip balancing SSIM quality, file size, and encode speed:
+
+```bash
+python era_search.py -i sample.mp4 --budget 20 --metric ssim
 ```
 
 #### Batch Mode
@@ -198,41 +209,50 @@ docker-compose run batch
 
 ## Building from Source
 
-```bash
-pyinstaller av1_encoder_ctk.spec --noconfirm
-```
+To build a standalone Windows executable:
+
+1. Install PyInstaller:
+   ```bash
+   pip install pyinstaller
+   ```
+2. (Optional) Place `ffmpeg.exe` and `ffprobe.exe` in the root repository folder to bundle them inside the executable. If omitted, the executable will automatically look for FFmpeg on the system `PATH`.
+3. Build the package:
+   ```bash
+   pyinstaller av1_encoder_ctk.spec --noconfirm
+   ```
 
 Output: `dist/AV1_Encoder_Pro.exe`
 
 ## Project Structure
 
 ```
-├── av1_encoder_ctk.py      # Main GUI application
-├── encode_cli.py           # CLI encoder for Docker/scripts
-├── web_ui.py               # Web UI (Gradio) for Docker
-├── av1_encoder_ctk.spec    # PyInstaller config
-├── version_info.txt        # EXE version metadata
-├── ffmpeg.exe              # FFmpeg binary (Windows)
-├── requirements.txt        # Python dependencies
-├── Dockerfile              # Docker image config
-├── docker-compose.yml      # Docker services (web, cli, batch)
-├── DOCKER.md               # Docker usage guide
-├── assets/
-│   ├── av1_codec_logo.png
-│   └── CustomTkinter_icon_Windows.ico
-├── dist/
-│   └── AV1_Encoder_Pro.exe  # Built executable
-├── README.md
-└── USAGE_GUIDE.md
+├── av1core.py              # Unified AV1 encoding engine & command builder
+├── av1_encoder_ctk.py      # Main GUI application (CustomTkinter)
+├── encode_cli.py           # CLI encoder for headless/Docker/scripts
+├── era_search.py           # PUCT Monte Carlo parameter optimization search
+├── web_ui.py               # Web UI (Gradio) for browser & Docker
+├── av1_encoder_ctk.spec    # PyInstaller packaging specification
+├── version_info.txt        # Windows EXE version metadata
+├── requirements.txt        # Master Python dependencies
+├── requirements-gui.txt    # GUI-specific dependencies
+├── requirements-web.txt    # Web UI dependencies
+├── Dockerfile              # Production multi-stage Dockerfile
+├── docker-compose.yml      # Docker services (web, cli, batch, gui)
+├── DOCKER.md               # Docker & Unraid documentation
+├── USAGE_GUIDE.md          # Comprehensive user manual
+├── LICENSE                 # MIT License
+├── assets/                 # Icons and logos
+├── docs/                   # Review history and documentation
+└── tests/                  # Unit and integration test suite
 ```
 
 ## Credits
 
 - **FFmpeg** - Video encoding engine
-- **SVT-AV1** - AV1 encoder by Intel/Netflix
+- **SVT-AV1** - AV1 encoder by Intel/Netflix/AOMedia
 - **CustomTkinter** - Modern Python GUI toolkit
 - **windnd** - Windows drag & drop support
 
 ## License
 
-© 2026 AV1 Encoder Pro. All rights reserved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

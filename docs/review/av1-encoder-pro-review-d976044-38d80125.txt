@@ -1,0 +1,145 @@
+AV1_Encoder_Pro - clean-sweep review
+Repo: https://github.com/3453-315h/AV1_Encoder_Pro (public, default branch)
+HEAD reviewed: d976044cd1daf8fe74a4ab75ae174bbed18e9654  "Bump version to 1.2.0 and fix SVT-AV1 bugs" (2026-03-26)
+Reviewed every tracked file: av1_encoder_ctk.py (1383 lines), encode_cli.py (166), web_ui.py (293), Dockerfile, docker-compose.yml, entrypoint.sh, my-av1-encoder-unraid.xml, requirements.txt, av1_encoder_ctk.spec, version_info.txt, README.md, USAGE_GUIDE.md, DOCKER.md, tofix.md.
+Errors are reported with file/line. Nothing was fixed.
+
+HOW I CHECKED
+- All .py files compile (py_compile).
+- I ran encode_cli.py against a 1s test clip with the ffmpeg on my box (4.4.2). That ffmpeg has libaom only, NO libsvtav1 and NO librav1e. So every claim below tagged [RAN] was reproduced; [READ] means from code reading only; [VERIFY] means depends on ffmpeg/SVT version you run.
+- There are no tests in the repo. I could not run the GUI (needs a display + customtkinter on Windows) or the Gradio UI.
+
+VERDICT
+The Windows GUI path (SVT-AV1, single + batch) looks sound for the happy path. The CLI/Docker/web path has real breakage: the Docker "encoder" service and documented docker commands do not work, the CLI sends invalid options to librav1e, and both front ends can pass a bad audio/preset combo that ffmpeg rejects. Cancel does not actually cancel a batch. tofix.md claims things are fixed that are not. No test gates exist at all.
+
+======================================================================
+A. BUGS (fix first)
+======================================================================
+
+1. docker-compose "encoder" service is broken. [READ, confirmed by entrypoint logic]
+   docker-compose.yml:25 `command: ["encode_cli.py", "--help"]` and the usage comment at line 4-5, plus DOCKER.md:23 and DOCKER.md:42, all pass "encode_cli.py" as an argument. The image ENTRYPOINT is entrypoint.sh (Dockerfile:56), which in cli mode does `exec python encode_cli.py "$@"` (entrypoint.sh:17). Result: `python encode_cli.py encode_cli.py --help`, argparse errors on the stray positional / missing -i.
+   Fix: drop "encode_cli.py" from those commands/docs (README.md:128-133 already shows the working form), or change the entrypoint to accept it.
+
+2. CLI sends invalid options to librav1e. [RAN: ffmpeg exit 1]
+   encode_cli.py:49 falls into the generic `else:` branch: `-c:v librav1e -crf N -cpu-used P`. librav1e uses -qp and -speed, not -crf/-cpu-used. The GUI got this right (av1_encoder_ctk.py:1261-1263); the CLI (and therefore Docker CLI and Web UI, which shell out to it) did not. Also web_ui.py:15 offers librav1e.
+   Also: av1_encoder_ctk.py:1263 `-qp crf` feeds a 0-63 CRF value to rav1e's -qp (0-255 scale), so GUI librav1e quality is far higher than the slider says. Map or clamp deliberately.
+
+3. libaom-av1 runs in constrained-quality mode because -b:v 0 is missing. [VERIFY]
+   encode_cli.py:49 and av1_encoder_ctk.py:1266 pass -crf without `-b:v 0`. FFmpeg's libaom docs say constant-quality mode needs -b:v 0; otherwise a default bitrate cap applies and the CRF is not honoured as expected. Check the output bitrate on a high-motion clip and add `-b:v 0` if capped.
+
+4. Audio "Copy" into WebM fails in the CLI and web UI. [RAN: "Error initializing output stream", exit 1]
+   encode_cli.py:65-66 passes `-c:a copy` straight through; web_ui.py:17/242-246 offers audio copy with default output webm. The GUI guards this (av1_encoder_ctk.py:1181-1186) but CLI/web do not. Reject or auto-switch to opus for .webm, same as the GUI.
+
+5. Preset range is not encoder-aware, so valid-looking choices crash. [READ]
+   CLI/web allow 0-13 (encode_cli.py:120, web_ui.py:198); GUI offers up to 12 (av1_encoder_ctk.py:871). libaom -cpu-used max is 8; rav1e -speed max 10; NVENC mapping at encode_cli.py:43 / av1_encoder_ctk.py:1256 inverts the scale with `8 - preset` so preset 0 and 1 both become p7 and anything >=7 becomes p1 (fine) - but "slowest" meaning is silently clamped. Clamp per encoder and tell the user.
+
+6. Cancel does not stop a batch. [READ]
+   cancel_encode (av1_encoder_ctk.py:1334-1357) terminates running ffmpeg and sets _schedule_cancelled, but run_batch (699-773) never checks that flag. The killed process returns non-zero, the loop counts a failure, then starts the NEXT file. The partial output file for the cancelled item is also left on disk. The flag is also only reset inside _scheduled_batch_start (685), so it stays True after any cancel and is never consulted by an immediate batch.
+   Fix: check a cancel flag at the top of each loop iteration and after each step; delete the partial output; reset the flag at batch start.
+
+7. GUI never shows why ffmpeg failed. [READ]
+   Both run_encode (1313-1319) and run_batch (751-757) only log lines containing frame=/size=/time=. Real errors ("Unknown encoder", "Option not found", "Error initializing output stream") are dropped, so the log shows only "ENCODE failed with code 1". Keep the last ~20 stderr lines and log them on non-zero exit (web_ui.py:104 already does this; copy that).
+
+8. Batch re-encodes its own outputs. [READ]
+   run_batch writes `<name>_AV1.<ext>` next to the source by default (av1_encoder_ctk.py:717-722) and batch_add_folder / on_drop scan recursively (608-625, 145-156). Re-adding the same folder queues the _AV1 files and produces `_AV1_AV1`. Skip names ending in _AV1, or skip files whose output already exists. The overwrite warning at 1271-1272 is only logged; ffmpeg -y still overwrites.
+
+9. Unraid template contradicts tofix.md #29. [READ]
+   my-av1-encoder-unraid.xml: <Data> volume is Mode ro (line ~38) but the <Config Name="Input Videos Path" ... Mode="rw"> entry (line ~52) is what Unraid actually applies. Make them agree. Also the Web UI uploads into gradio temp, not /videos, so the /videos mount is not even used by the web path (see 11).
+
+10. Web UI hardcodes server and paths. [READ]
+   web_ui.py:20-21 OUTPUT_DIR=/output, UPLOAD_DIR=/videos; UPLOAD_DIR is created (44-45) but never used. Off Docker on Windows this writes to C:\output. web_ui.py:61 launches "python" instead of sys.executable (breaks in venvs/PATH-less installs). web_ui.py:288-293 binds 0.0.0.0:2081 with no auth and no queue limit: anyone on the LAN can upload and burn CPU. At least document it; ideally add auth/queue(max concurrent = 1) and a cancel button.
+
+11. Web UI progress is fake. [READ]
+   web_ui.py:93-94 sets progress to a constant 0.5 on every frame= line. tofix.md #24 calls this skipped, fine, but it should be said in the UI. Probe duration with ffprobe and compute time= / duration.
+
+======================================================================
+B. DOCKER / DEPENDENCIES
+======================================================================
+
+12. requirements.txt is unpinned and mixes platforms. [READ]
+   `gradio>=4.0.0` has no upper bound; gradio 4 -> 5 -> 6 change component APIs (gr.File, themes, Progress). Pin a tested range (e.g. ==5.x you actually run). `windnd` is Windows-only but installed in the Linux image (Dockerfile:41); harmless because the import is guarded, but it is dead weight. `customtkinter`+`Pillow` are also installed in the web/CLI image. Split into requirements-gui.txt / requirements-web.txt.
+
+13. Dockerfile installs `python3-tk` via apt (Dockerfile:25) but the image Python is the base image's /usr/local python 3.11, not Debian's python3. tkinter will not be importable by `python`, so MODE=gui / the compose `gui` service likely fails with ModuleNotFoundError: tkinter. [VERIFY with `docker run --entrypoint python image -c "import tkinter"`.]
+
+14. ffmpeg in the image is Debian bookworm's package (ffmpeg 5.1). Confirm with `ffmpeg -encoders | grep -i av1` that libsvtav1, libaom-av1 and librav1e are all present; the app advertises all three. NVENC/AMF/QSV (README.md:53-55) cannot work in this image: Debian ffmpeg has no NVENC without extra libs and compose has no GPU runtime/device stanza. DOCKER.md:206-237 describes NVIDIA passthrough but the encoder would still be missing. Say so or remove.
+
+15. SVT-AV1 params depend on the installed SVT version. [VERIFY]
+   av1_encoder_ctk.py:1240 uses `logical-processors=N` and 1235-1237 uses `film-grain-denoise=1`; tune 2 (SSIM) at 1200. Run the actual `ffmpeg -h encoder=libsvtav1` / a 1-second encode on each of: your Windows ffmpeg.exe, the Docker image, with threads>0, grain>0, tune 0/1/2. Several of these keys differ across SVT-AV1 1.x vs 2.x. This commit's message says it fixed SVT bugs; there is no test proving it.
+
+16. Container runs as root; no HEALTHCHECK. Low priority. Add a non-root user and a HEALTHCHECK on :2081 for web mode.
+
+17. docker-compose.yml:105-108 declares named volumes `videos` and `output` that no service uses (bind mounts are used). Remove.
+
+======================================================================
+C. LOGIC / CODE QUALITY
+======================================================================
+
+18. CRF mapping truncates: `int(63 - q*0.63)` (encode_cli.py:25, av1_encoder_ctk.py:703,1154). Quality 100 gives CRF 0 which SVT treats as lossless-ish and enormous files; quality 0 gives 63. Use round(), clamp to a sane range (e.g. 18-45 for the slider), and state CRF in the summary. The CLI help says "maps to CRF" but not how.
+
+19. Two copies of the encoder command builder (encode_cli.py:34-49 vs av1_encoder_ctk.py:1227-1266) have already drifted (items 2, 4). Move to one shared module (e.g. av1core.py) used by GUI, CLI and web, and add tests there.
+
+20. run_batch reads settings from widgets inside a worker thread (av1_encoder_ctk.py:702-704, 716, 721) and compile_encode_commands reads many tk variables off-thread (1167-1222). Tkinter variables are not thread-safe; snapshot all settings on the UI thread before starting the thread. Same for `getattr(self, 'batch_output_var', ctk.StringVar())` at 716, which creates a Tk object in a worker thread as the fallback.
+
+21. active_processes is initialised at line 105, after check_ffmpeg() (102) and the build_* calls; fine today but fragile. Move it to the top of __init__.
+
+22. _scheduled_batch_start (682-697): `elapsed += 5` even when sleep was shorter, and the "minutes remaining" log condition `elapsed % 60 < 6` is approximate. Also drift: a laptop sleep makes it wake late. Compute target time and compare to datetime.now() instead.
+
+23. batch_start (646-650) only supports Today/Tomorrow; and a schedule at a time already passed "today" silently moves to tomorrow without telling the user. Log it. (tofix.md #15 skipped, fine.)
+
+24. CLI error filter `"error" in line.lower()` (encode_cli.py:84) misses fatal ffmpeg messages that do not contain the word "error" and also matches harmless lines. Print the last N stderr lines on failure.
+
+25. CLI does not validate ranges: -q (0-100) and -g (0-50) are unchecked (encode_cli.py:118, 135). Out-of-range values produce a negative/oversized CRF.
+
+26. CLI/web do not check that the chosen encoder exists in the local ffmpeg. Run `ffmpeg -encoders` once and give a clear message ("libsvtav1 not available in this ffmpeg") instead of an ffmpeg stack of errors.
+
+27. av1_encoder_ctk.spec:13 bundles ffmpeg.exe; the file is gitignored (tofix.md #19), so a fresh clone cannot build the exe and the spec fails with a missing-file error. Document where to put it or make the spec tolerant. UPX is on (`upx=True`, spec:49): UPX-packed PyInstaller exes get flagged by AV more often.
+
+28. `import customtkinter` at the top of the spec means building requires the full GUI deps installed; fine, just undocumented.
+
+======================================================================
+D. DOCS / REPO HYGIENE
+======================================================================
+
+29. tofix.md is stale and partly wrong:
+   - Title says v1.1.0; code is 1.2.0.
+   - #1 says "Changed Version 1.1.0 -> Version 1.1.0" (no-op).
+   - #29 says fixed, see item 9 above (Config Mode still rw).
+   - #2/#9 and others cannot be confirmed because there are no tests.
+   - Items are listed as "27 actionable ... 3 skipped" but numbered 1-30, and #15 and #24 are the only two marked SKIPPED; the third is not identifiable.
+   Delete it or regenerate it against this list.
+
+30. USAGE_GUIDE.md still documents features that do not exist: "Two-Pass" (USAGE_GUIDE.md:54, 156; tofix.md #26 removed twopass_var), a Scheduler "task list / Add to Schedule / Cancel" (USAGE_GUIDE.md:109-119 vs a single time entry in av1_encoder_ctk.py:387-401), and a line at 198 "(To be implemented in future versions)". README.md:42 and 170-174 describe the same scheduler workflow loosely.
+
+31. README.md:76 and 89 say FFmpeg is bundled with the exe; it is not in the repo and the spec expects you to supply ffmpeg.exe. README.md:215 lists ffmpeg.exe in the tree. README.md:80,92 install line omits gradio and says "Python 3.8+" while the Docker image uses 3.11; test the minimum.
+
+32. Unraid XML advertises "Visual Quality Metrics" and "Batch processing" (my-av1-encoder-unraid.xml:Overview). Neither exists in the web UI (single upload only; no VMAF/PSNR reporting). <Icon> is the Handbrake icon from linuxserver (tofix.md #21 only left a TODO). <Registry> and <Repository> are 315h/av1-encoder-pro on Docker Hub: confirm that image exists and is current before publishing the template. `DateInstalled` (1673000000) is a 2023 placeholder.
+
+33. Release/versioning: version is repeated in 5 places (Dockerfile:12, version_info.txt:21,26, av1_encoder_ctk.py:587, README.md:67, DOCKER.md:155/161). Single source of truth please.
+
+34. No LICENSE file, no CI, no tests, no .github workflows. (I saw none in the tracked file list.)
+
+======================================================================
+E. THINGS THAT ARE FINE (checked)
+======================================================================
+- ffmpeg refuses to write output to the same path as input; I confirmed `-i x.mp4 -o x.mp4` leaves the source intact (it errors instead of overwriting). [RAN, with libaom]
+- Windows-only STARTUPINFO / windnd are correctly guarded by IS_WINDOWS (av1_encoder_ctk.py:16-25, 740-745, 1302-1307).
+- Audio probing for video-only inputs (1127-1141, 1172-1178) is good.
+- Film tune mapping and auto grain 8 (1200-1205) behaves as documented.
+- Console 5000-line cap, schedule HH:MM clamping, recursive drop scan all present as claimed.
+- Compose batch service shell quoting ($$ escapes, nullglob, bash entrypoint) is correct.
+
+======================================================================
+F. OPEN TEST GATES (none exist today)
+======================================================================
+G1. Unit tests for the command builder: one parametrised table of (encoder, preset, quality, grain, tune, audio, container) -> argv, run for GUI, CLI and web. Asserts: no -crf for rav1e, -b:v 0 for libaom, no `copy` audio into webm, preset clamped per encoder.
+G2. Smoke encode, 1s lavfi clip, every encoder your ffmpeg has: exit 0, output ffprobe-able as av1, correct container.
+G3. Cancel test: start a 3-file batch, cancel during file 1, assert files 2 and 3 never start and no partial file remains.
+G4. Docker test: `docker compose run encoder --help`, `docker run image --help`, `docker compose run batch` on a 2-file folder, and `MODE=web` returns HTTP 200 on :2081.
+G5. Re-run guard: batch over a folder twice, assert no _AV1_AV1 files.
+G6. Windows exe build from clean clone with ffmpeg.exe supplied; launch, encode 1 clip.
+G7. SVT-AV1 param matrix against the exact SVT/ffmpeg versions you ship (item 15).
+
+======================================================================
+CONSOLIDATED FIX ORDER
+======================================================================
+1 (compose/docs command), 2 (rav1e), 3 (libaom -b:v 0), 4 (webm+copy), 6 (cancel), 7 (error log), 8 (_AV1 re-encode), 5, 9, 10, 13, 14, 15, then 18-28, then docs 29-34. Item 19 (shared builder) makes 2/3/4/5 stay fixed.

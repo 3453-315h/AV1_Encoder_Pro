@@ -1,0 +1,44 @@
+AV1 ENCODER PRO - bounded parameter search, an idea taken from ERA
+2026-10-20
+
+Sources:
+- https://github.com/google-research/era @ 012c2d3
+- https://arxiv.org/abs/2509.06503
+Source-only review: nothing installed or run. Proposed use is conceptual,
+not checked against the AV1_Encoder_Pro repo.
+
+TAKE:
+- ERA's loop - generate a candidate, execute it, score it, let tree search
+  pick what to try next - fits encoder tuning well because encoding is a
+  scorable task: quality metric, encode time and file size are all
+  measurable.
+- Proposed use: search SVT-AV1 parameter sets (preset / CRF / tune
+  combinations, or candidate flag sets) against measured quality (e.g.
+  VMAF/SSIM), runtime and output size.
+- The reusable core is implementation/futs.py (~100 lines, Apache-2.0): flat
+  tree search, PUCT selection, visit-count backprop, answer = best raw
+  score.
+- A portable detail: converting raw scores to ranks (rank/(n-1)) before
+  combining with the exploration bonus reduces dependence on a metric's
+  numerical score range. It does not settle how quality, time and size
+  should be weighted against each other - that choice is yours.
+- No LLM required for this use: the search works with any candidate
+  generator. A plain parameter sampler over the flag space is a fine
+  generate step.
+
+DISCIPLINE REQUIRED:
+- The search optimises exactly what you score. Score VMAF alone and it will
+  buy VMAF with bitrate; put size and time in the objective if they matter.
+- Keep a held-out set of clips for final evaluation that the search never
+  sees, so reported gains aren't overfit to the tuning corpus.
+
+COST REALITY:
+- Each candidate costs one full encode plus one metric pass, and what that
+  costs depends on clip duration, encoder settings and your hardware. Time a
+  small sample of encodes first and set the search budget from that
+  measurement - no runtime promise is made here.
+
+DO NOT TAKE:
+- The ERA repo as-is: its sandbox is a deliberate stub and the shipped
+  example is broken (confirmed TypeErrors, README/code mismatches). Reuse
+  futs.py with your own generate/execute/score functions.

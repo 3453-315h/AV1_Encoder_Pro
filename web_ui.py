@@ -7,18 +7,21 @@ Browser-based UI for AV1 video encoding via Gradio.
 import gradio as gr
 import subprocess
 import os
+import sys
+import re
 from pathlib import Path
 from datetime import datetime
+import av1core
 
 
 # Constants
-ENCODERS = ["libsvtav1", "libaom-av1", "librav1e", "av1_nvenc", "av1_amf", "av1_qsv"]
+ENCODERS = av1core.SUPPORTED_ENCODERS
 CLI_SCRIPT = os.environ.get("CLI_PATH", str(Path(__file__).parent / "encode_cli.py"))
 AUDIO_CODECS = ["libopus", "aac", "copy", "none"]
 RESOLUTIONS = ["original", "4k", "1080p", "720p", "480p"]
 TUNE_OPTIONS = ["VQ (Visual Quality)", "PSNR", "SSIM"]
-OUTPUT_DIR = Path("/output")
-UPLOAD_DIR = Path("/videos")
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "/output" if os.path.exists("/output") else "./output"))
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/videos" if os.path.exists("/videos") else "./videos"))
 
 
 def encode_video(
@@ -38,6 +41,11 @@ def encode_video(
     
     if input_file is None:
         return None, "❌ Please upload a video file first."
+
+    # Validate encoder availability
+    available = av1core.get_available_encoders()
+    if available and encoder not in available:
+        return None, f"❌ Encoder '{encoder}' is not supported by the server's FFmpeg.\nAvailable encoders: {', '.join(sorted(available))}"
     
     try:
         # Ensure output directory exists
@@ -58,7 +66,7 @@ def encode_video(
         
         # Build command
         cmd = [
-            "python", CLI_SCRIPT,
+            sys.executable, CLI_SCRIPT,
             "-i", str(input_path),
             "-o", str(output_path),
             "-q", str(quality),
@@ -68,11 +76,13 @@ def encode_video(
             "-b", audio_bitrate,
             "-t", str(tune_value),
             "-g", str(film_grain),
+            "-y"
         ]
         
         if resolution != "original":
             cmd.extend(["-r", resolution])
         
+        total_duration = av1core.probe_video_duration(str(input_path))
         progress(0.1, desc="Starting encode...")
         
         # Run encoding
@@ -85,13 +95,23 @@ def encode_video(
         )
         
         log_output = []
-        progress(0.2, desc="Encoding in progress...")
+        progress(0.15, desc="Encoding in progress...")
         
         for line in process.stdout:
-            log_output.append(line.strip())
-            # Parse progress from ffmpeg output if available
-            if "frame=" in line:
-                progress(0.5, desc=f"Encoding: {line.strip()[:50]}...")
+            line_str = line.strip()
+            log_output.append(line_str)
+            # Parse real progress from ffmpeg time= output if available
+            if "time=" in line_str:
+                match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line_str)
+                if match and total_duration and total_duration > 0:
+                    hours, mins, secs = int(match.group(1)), int(match.group(2)), float(match.group(3))
+                    cur_secs = hours * 3600 + mins * 60 + secs
+                    fraction = min(0.95, max(0.15, cur_secs / total_duration))
+                    progress(fraction, desc=f"Encoding: {int(fraction * 100)}% ({cur_secs:.1f}s / {total_duration:.1f}s)...")
+                else:
+                    progress(0.5, desc=f"Encoding: {line_str[:50]}...")
+            elif "frame=" in line_str:
+                progress(0.3, desc=f"Encoding: {line_str[:50]}...")
         
         process.wait()
         progress(0.9, desc="Finalizing...")
@@ -285,9 +305,21 @@ with gr.Blocks(
 
 
 if __name__ == "__main__":
+    server_name = os.environ.get("HOST", "127.0.0.1")
+    server_port = int(os.environ.get("PORT", "2081"))
+    
+    auth = None
+    web_user = os.environ.get("WEB_USER")
+    web_pass = os.environ.get("WEB_PASSWORD")
+    if web_user and web_pass:
+        auth = (web_user, web_pass)
+        
+    app.queue(default_concurrency_limit=1)
+    
     app.launch(
-        server_name="0.0.0.0",
-        server_port=2081,
+        server_name=server_name,
+        server_port=server_port,
+        auth=auth,
         share=False,
         show_error=True
     )

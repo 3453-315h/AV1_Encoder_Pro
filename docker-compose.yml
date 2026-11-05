@@ -1,9 +1,10 @@
 # AV1 Video Encoder Pro - Docker Compose Configuration
 #
 # Usage:
-#   Start CLI mode:     docker-compose run encoder --help
-#   Encode a video:     docker-compose run encoder encode_cli.py -i /videos/input.mp4 -o /output/output.webm
-#   Start GUI (Linux):  docker-compose up gui
+#   Start CLI mode:     docker compose run --rm encoder --help
+#   Encode a video:     docker compose run --rm encoder -i /videos/input.mp4 -o /output/output.webm -q 50
+#   Start Web UI:       docker compose up web
+#   Start GUI (Linux):  docker compose up gui
 #
 # Prerequisites for GUI mode on Linux:
 #   xhost +local:docker
@@ -27,7 +28,7 @@ services:
       - PYTHONIOENCODING=utf-8
     working_dir: /app
     # Default: show help
-    command: [ "encode_cli.py", "--help" ]
+    command: [ "--help" ]
 
   # Batch encoding service
   batch:
@@ -49,15 +50,31 @@ services:
         echo "=== AV1 Batch Encoder ==="
         echo "Encoding all videos in /videos to /output..."
         shopt -s nullglob
-        for f in /videos/*.{mp4,mkv,avi,mov,webm}; do
+        succeeded=0
+        failed=0
+        for f in /videos/*.{mp4,mkv,avi,mov,webm,MP4,MKV,AVI,MOV,WEBM}; do
           if [ -f "$$f" ]; then
             filename=$$(basename "$$f")
             name="$${filename%.*}"
-            echo "Encoding: $$filename"
-            python /app/encode_cli.py -i "$$f" -o "/output/$${name}_av1.webm" -q 50 -p 6
+            ext="$${filename##*.}"
+            out="/output/$${name}_av1.webm"
+            # Prevent stem collisions across different source extensions
+            if [ -f "$$out" ]; then
+              out="/output/$${name}_$${ext}_av1.webm"
+            fi
+            echo "Encoding: $$filename -> $$(basename "$$out")"
+            if python /app/encode_cli.py -i "$$f" -o "$$out" -q 50 -p 6; then
+              succeeded=$$((succeeded + 1))
+            else
+              echo "FAILED: $$filename" >&2
+              failed=$$((failed + 1))
+            fi
           fi
         done
-        echo "=== Batch complete ==="
+        echo "=== Batch complete: $$succeeded succeeded, $$failed failed ==="
+        if [ "$$failed" -gt 0 ]; then
+          exit 1
+        fi
 
   # Web UI Mode (Browser access - works on all platforms)
   web:
@@ -71,13 +88,14 @@ services:
       - ./output:/output
     environment:
       - PYTHONIOENCODING=utf-8
-      - GRADIO_SERVER_NAME=0.0.0.0
-      - GRADIO_SERVER_PORT=2081
+      - HOST=0.0.0.0
+      - PORT=2081
     working_dir: /app
     # Run the Web UI application
     entrypoint: [ "python", "web_ui.py" ]
     ports:
-      - "2081:2081"
+      # Bound to localhost for security; change to "2081:2081" or "0.0.0.0:2081:2081" for LAN access
+      - "127.0.0.1:2081:2081"
     restart: unless-stopped
 
   # GUI Mode (Linux with X11) - Desktop GUI, not for browser
@@ -101,8 +119,3 @@ services:
     working_dir: /app
     # Run the GUI application
     entrypoint: [ "python", "av1_encoder_ctk.py" ]
-
-# Optional: Named volumes for persistent storage
-volumes:
-  videos:
-  output:

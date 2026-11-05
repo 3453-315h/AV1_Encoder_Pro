@@ -14,13 +14,13 @@ docker build -t av1-encoder-pro .
 
 Encode a single video:
 ```bash
-docker run -v $(pwd)/videos:/videos -v $(pwd)/output:/output av1-encoder-pro \
-    encode_cli.py -i /videos/input.mp4 -o /output/output.webm -q 50 -p 6
+docker run --rm -v $(pwd)/videos:/videos:ro -v $(pwd)/output:/output av1-encoder-pro \
+    -i /videos/input.mp4 -o /output/output.webm -q 50 -p 6
 ```
 
 Show help:
 ```bash
-docker run av1-encoder-pro encode_cli.py --help
+docker run --rm av1-encoder-pro --help
 ```
 
 ---
@@ -39,13 +39,13 @@ mkdir -p videos output
 ### Encode Single Video
 
 ```bash
-docker-compose run encoder encode_cli.py -i /videos/myvideo.mp4 -o /output/myvideo_av1.webm
+docker compose run --rm encoder -i /videos/myvideo.mp4 -o /output/myvideo_av1.webm
 ```
 
 ### Batch Encode All Videos
 
 ```bash
-docker-compose run batch
+docker compose run --rm batch
 ```
 
 This encodes all videos in `./videos/` to `./output/` with default settings.
@@ -152,13 +152,13 @@ To share your encoder image on Docker Hub:
 2.  **Tag the Image**
     Replace `your-username` with your actual Docker Hub username.
     ```bash
-    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.2.0
+    docker tag av1-encoder-pro your-username/av1-encoder-pro:v1.3.0
     docker tag av1-encoder-pro your-username/av1-encoder-pro:latest
     ```
 
 3.  **Push to Docker Hub**
     ```bash
-    docker push your-username/av1-encoder-pro:v1.2.0
+    docker push your-username/av1-encoder-pro:v1.3.0
     docker push your-username/av1-encoder-pro:latest
     ```
 
