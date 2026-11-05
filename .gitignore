@@ -41,8 +41,13 @@ desktop.ini
 # Logs
 *.log
 
-# FFmpeg binary (too large for git)
+# FFmpeg binaries (too large for git)
 ffmpeg.exe
+ffprobe.exe
+
+# Video directories (used in Docker mounts & local test encodes)
+videos/
+output/
 
 # PyInstaller
 *.manifest

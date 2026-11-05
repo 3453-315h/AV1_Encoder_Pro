@@ -150,12 +150,6 @@ The bottom section shows real-time encoding output:
 - Higher values (20-50) add artistic effect
 - Increases file size slightly
 
-### Two-Pass Encoding
-
-- Produces more consistent quality
-- Takes approximately 2x longer
-- Recommended for final exports
-
 ---
 
 ## Troubleshooting
@@ -190,17 +184,11 @@ The bottom section shows real-time encoding output:
 
 ---
 
-## Keyboard Shortcuts
-
-(To be implemented in future versions)
-
----
-
 ## Technical Details
 
 ### Encoding Command
 
-The app generates FFmpeg commands like:
+The app generates FFmpeg commands via `av1core`:
 
 ```bash
 ffmpeg -i input.mp4 -c:v libsvtav1 -crf 30 -preset 6 -svtav1-params tune=0 -c:a libopus -b:a 128k output.webm
@@ -208,7 +196,6 @@ ffmpeg -i input.mp4 -c:v libsvtav1 -crf 30 -preset 6 -svtav1-params tune=0 -c:a 
 
 ### Dependencies
 
-- **FFmpeg** with libsvtav1 encoder
-- **CustomTkinter** for the modern dark UI
-- **Pillow** for image handling
-- **windnd** for Windows drag & drop
+- **FFmpeg** with libsvtav1, libaom-av1, or librav1e support
+- **GUI**: `customtkinter`, `Pillow`, `windnd` (Windows) — see `requirements-gui.txt`
+- **Web UI**: `gradio` — see `requirements-web.txt`
