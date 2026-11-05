@@ -39,9 +39,7 @@ jobs:
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: |
-          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg --no-progress
-          }
+          choco install ffmpeg-full --no-progress
 
       - name: Install Python dependencies
         run: |

@@ -3,6 +3,7 @@ import unittest
 import tempfile
 import subprocess
 
+import av1core
 from era_search import Candidate, SearchNode, FlatPUCTSearch, generate_search_space, run_search
 
 
@@ -69,6 +70,8 @@ class TestERASearchIntegration(unittest.TestCase):
 
     def test_run_search_smoke(self):
         """Smoke test run_search on small clip with budget=2."""
+        if "libsvtav1" not in av1core.get_available_encoders():
+            raise unittest.SkipTest("libsvtav1 encoder not supported by installed FFmpeg")
         best = run_search(self.ref_path, budget_iterations=2, metric="ssim")
         self.assertIsNotNone(best)
         self.assertIsNotNone(best.raw_score)

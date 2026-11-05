@@ -25,6 +25,7 @@ if 'customtkinter' not in sys.modules:
 
 import encode_cli
 import av1_encoder_ctk
+import av1core
 
 
 class TestCLIEncoder(unittest.TestCase):
@@ -296,6 +297,8 @@ class TestEndToEndEncoding(unittest.TestCase):
 
     def test_e2e_svtav1_encode(self):
         """Smoke encode 1s fixture with libsvtav1."""
+        if "libsvtav1" not in av1core.get_available_encoders():
+            raise unittest.SkipTest("libsvtav1 encoder not supported by installed FFmpeg")
         out_path = os.path.join(self.tmpdir.name, "out_svt.webm")
         success = encode_cli.encode_video(
             self.fixture_path, out_path,
@@ -307,6 +310,8 @@ class TestEndToEndEncoding(unittest.TestCase):
 
     def test_e2e_libaom_encode(self):
         """Smoke encode 1s fixture with libaom-av1."""
+        if "libaom-av1" not in av1core.get_available_encoders():
+            raise unittest.SkipTest("libaom-av1 encoder not supported by installed FFmpeg")
         out_path = os.path.join(self.tmpdir.name, "out_aom.webm")
         success = encode_cli.encode_video(
             self.fixture_path, out_path,
@@ -318,6 +323,8 @@ class TestEndToEndEncoding(unittest.TestCase):
 
     def test_e2e_rav1e_encode(self):
         """Smoke encode 1s fixture with librav1e."""
+        if "librav1e" not in av1core.get_available_encoders():
+            raise unittest.SkipTest("librav1e encoder not supported by installed FFmpeg")
         out_path = os.path.join(self.tmpdir.name, "out_rav1e.mp4")
         success = encode_cli.encode_video(
             self.fixture_path, out_path,
