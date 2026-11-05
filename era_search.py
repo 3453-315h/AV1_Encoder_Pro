@@ -225,23 +225,23 @@ def run_search(reference_video: str, budget_iterations: int = 10,
         searcher.update(node, score, metrics)
 
         if "error" in metrics:
-            print(f"  ❌ Failed: {metrics['error']}")
+            print(f"  [FAIL] Failed: {metrics['error']}")
         else:
-            print(f"  ✓ Quality ({metric}): {metrics['quality']:.4f} | Size: {metrics['size_bytes']/1024:.1f} KB ({metrics['compression_ratio']*100:.1f}%) | Time: {metrics['encode_time_sec']:.2f}s | Score: {score:.2f}")
+            print(f"  [OK] Quality ({metric}): {metrics['quality']:.4f} | Size: {metrics['size_bytes']/1024:.1f} KB ({metrics['compression_ratio']*100:.1f}%) | Time: {metrics['encode_time_sec']:.2f}s | Score: {score:.2f}")
 
     best = searcher.best_node()
     if best:
         print("\n" + "=" * 60)
-        print("🏆 [ERA SEARCH COMPLETE] Optimal SVT-AV1 Candidate:")
-        print(f"  • Preset: {best.candidate.preset}")
-        print(f"  • CRF: {best.candidate.crf}")
-        print(f"  • Tune: {best.candidate.tune}")
-        print(f"  • Film Grain: {best.candidate.grain}")
-        print(f"  • Score: {best.raw_score:.2f}")
+        print("[ERA SEARCH COMPLETE] Optimal SVT-AV1 Candidate:")
+        print(f"  * Preset: {best.candidate.preset}")
+        print(f"  * CRF: {best.candidate.crf}")
+        print(f"  * Tune: {best.candidate.tune}")
+        print(f"  * Film Grain: {best.candidate.grain}")
+        print(f"  * Score: {best.raw_score:.2f}")
         if best.metrics:
-            print(f"  • {metric.upper()}: {best.metrics.get('quality', 0):.4f}")
-            print(f"  • Size: {best.metrics.get('size_bytes', 0)/1024:.1f} KB")
-            print(f"  • Encode Time: {best.metrics.get('encode_time_sec', 0):.2f}s")
+            print(f"  * {metric.upper()}: {best.metrics.get('quality', 0):.4f}")
+            print(f"  * Size: {best.metrics.get('size_bytes', 0)/1024:.1f} KB")
+            print(f"  * Encode Time: {best.metrics.get('encode_time_sec', 0):.2f}s")
         print("=" * 60)
     return best
 
